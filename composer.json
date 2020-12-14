@@ -1,0 +1,17 @@
+{
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "git@github.com:inbenta-integrations/chatbot_api_connector.git"
+        }
+    ],
+    "require": {
+        "inbenta/chatbot-api-connector": "~1.3.3",
+        "php": "~7.1"
+    },
+    "autoload":{
+        "psr-4":{
+            "Inbenta\\D360Connector\\": "lib/D360Connector"
+        }
+    }
+}
