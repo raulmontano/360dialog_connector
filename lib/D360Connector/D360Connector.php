@@ -37,14 +37,7 @@ class D360Connector extends ChatbotConnector
             ];
 
             $this->session = new SessionManager($this->getExternalIdFromRequest());
-
-            if (isset($request->messages) && isset($request->messages[0]) && isset($request->messages[0]->id)) {
-                //Prevent double request from 360 Dialog
-                if ($this->session->get('lastMessageId', "") !== "" && $this->session->get('lastMessageId', "") === $request->messages[0]->id) {
-                    die;
-                }
-                $this->session->set('lastMessageId', $request->messages[0]->id);
-            }
+            $this->validatePreviousMessages($request);
 
             $this->botClient = new ChatbotAPIClient($this->conf->get('api.key'), $this->conf->get('api.secret'), $this->session, $conversationConf);
 
@@ -314,6 +307,33 @@ class D360Connector extends ChatbotConnector
         // Display content rating if needed and not in chat nor asking to: escalate, related content, options, etc
         if ($needContentRating && !$this->chatOnGoing() && !$this->session->get('askingForEscalation', false) && !$this->session->get('hasRelatedContent', false) && !$this->session->get('options', false)) {
             $this->displayContentRatings($needContentRating);
+        }
+    }
+
+    /**
+     * Validate if the id of the recent message is not previously sent
+     * this prevents double request from 360 Dialog
+     */
+    private function validatePreviousMessages($request)
+    {
+        if (isset($request->messages) && isset($request->messages[0]) && isset($request->messages[0]->id)) {
+
+            $lastMessagesId = $this->session->get('lastMessagesId', false);
+            if (!is_array($lastMessagesId)) {
+                $lastMessagesId = [];
+            }
+            if (in_array($request->messages[0]->id, $lastMessagesId) ) {
+                die;
+            }
+            $lastMessagesId[time()] = $request->messages[0]->id;
+
+            foreach ($lastMessagesId as $key => $messageSent) {
+                if ((time() - 120) > $key) {
+                    //Deletes the stored incomming messages with more than 120 seconds
+                    unset($lastMessagesId[$key]);
+                }
+            }
+            $this->session->set('lastMessagesId', $lastMessagesId);
         }
     }
 }
