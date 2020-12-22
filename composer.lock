@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2c3d1da4cc7316c3938c66b7a38973e2",
+    "content-hash": "7cb66d2fc60ba1d4637af6acaf347e37",
     "packages": [
         {
             "name": "guzzlehttp/guzzle",
@@ -195,16 +195,16 @@
         },
         {
             "name": "inbenta/chatbot-api-connector",
-            "version": "v1.3.3",
+            "version": "v1.3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/inbenta-integrations/chatbot_api_connector.git",
-                "reference": "88b6c52c8022321967654187256881481a394016"
+                "reference": "001578e364d8f8d9a820fd8fd21446fe014dde8a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/inbenta-integrations/chatbot_api_connector/zipball/88b6c52c8022321967654187256881481a394016",
-                "reference": "88b6c52c8022321967654187256881481a394016",
+                "url": "https://api.github.com/repos/inbenta-integrations/chatbot_api_connector/zipball/001578e364d8f8d9a820fd8fd21446fe014dde8a",
+                "reference": "001578e364d8f8d9a820fd8fd21446fe014dde8a",
                 "shasum": ""
             },
             "require": {
@@ -219,10 +219,10 @@
                 }
             },
             "support": {
-                "source": "https://github.com/inbenta-integrations/chatbot_api_connector/tree/v1.3.3",
+                "source": "https://github.com/inbenta-integrations/chatbot_api_connector/tree/v1.3.4",
                 "issues": "https://github.com/inbenta-integrations/chatbot_api_connector/issues"
             },
-            "time": "2020-11-09T18:54:26+00:00"
+            "time": "2020-12-21T18:51:24+00:00"
         },
         {
             "name": "psr/http-message",
@@ -316,7 +316,7 @@
         },
         {
             "name": "symfony/http-foundation",
-            "version": "v3.4.46",
+            "version": "v3.4.47",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/http-foundation.git",

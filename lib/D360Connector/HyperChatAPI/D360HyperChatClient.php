@@ -134,7 +134,6 @@ class D360HyperChatClient extends HyperChatClient
                         //On close, save customer phone number, with the given email
                         $messengerAPI = new MessengerAPI($this->appConf, null, $this->session);
                         $escalationFormData = $this->session->get('escalationForm', false);
-                        $this->session->delete('escalationForm');
                         $messengerAPI->saveUserPhoneNumber($escalationFormData, $this->externalId);
                     }
 

@@ -5,10 +5,7 @@ namespace Inbenta\D360Connector;
 use Exception;
 use Inbenta\ChatbotConnector\ChatbotConnector;
 use Inbenta\ChatbotConnector\Utils\SessionManager;
-
 use Inbenta\ChatbotConnector\ChatbotAPI\ChatbotAPIClient;
-use Inbenta\D360Connector\ChatbotAPIClientVariables; //TEMPORAL, JUST FOR ADD THE setVariable FUNCTION (USED FOR ESCALATION), MUST DELETE ON CONNECTOR V2
-
 use Inbenta\D360Connector\ExternalAPI\D360APIClient;
 use Inbenta\D360Connector\ExternalDigester\D360Digester;
 use Inbenta\D360Connector\HyperChatAPI\D360HyperChatClient;
@@ -19,11 +16,6 @@ use Inbenta\D360Connector\SubscribeWebhook;
 
 class D360Connector extends ChatbotConnector
 {
-
-    //  M U S T   B E   ON   P A R E N T
-    const ESCALATION_DIRECT          = '__escalation_type_callback__';
-    const ESCALATION_OFFER           = '__escalation_type_offer__';
-
     public function __construct($appPath)
     {
         // Initialize and configure specific components for 360 dialog
@@ -55,7 +47,6 @@ class D360Connector extends ChatbotConnector
             }
 
             $this->botClient = new ChatbotAPIClient($this->conf->get('api.key'), $this->conf->get('api.secret'), $this->session, $conversationConf);
-            $this->botClientVariables = new ChatbotAPIClientVariables($this->conf->get('api.key'), $this->conf->get('api.secret'), $this->session, $conversationConf, $this->botClient);
 
             // Try to get the translations from ExtraInfo and update the language manager
             $this->getTranslationsFromExtraInfo('360', 'translations');
@@ -274,7 +265,7 @@ class D360Connector extends ChatbotConnector
     /**
      * Direct call to sys-welcome message to force escalation
      *
-     * @param [type] $externalRequest
+     * @param $externalRequest
      * @return void
      */
     public function handleBotActions($externalRequest)
@@ -282,7 +273,6 @@ class D360Connector extends ChatbotConnector
         $needEscalation = false;
         $needContentRating = false;
         $hasFormData = false;
-
         foreach ($externalRequest as $message) {
             // if the session just started throw sys-welcome message
             if ($this->isOnlyChat()) {
@@ -325,353 +315,5 @@ class D360Connector extends ChatbotConnector
         if ($needContentRating && !$this->chatOnGoing() && !$this->session->get('askingForEscalation', false) && !$this->session->get('hasRelatedContent', false) && !$this->session->get('options', false)) {
             $this->displayContentRatings($needContentRating);
         }
-    }
-
-
-
-    /**
-     * If there is escalation offer, delete the last message (that contains the polar question)
-     */
-    private function deleteLastMessage(&$botResponse)
-    {
-        if (isset($botResponse->answers) && $this->session->get('escalationType') == static::ESCALATION_OFFER) {
-            if (count($botResponse->answers) > 0) {
-                $elements = count($botResponse->answers) - 1;
-                unset($botResponse->answers[$elements]);
-            }
-        }
-    }
-
-
-
-    //THIS CHANGES INCLUDE ESCALATION V2 (ESCALATION_OFFER AND ESCALATION_DIRECT)
-    //OVERRIDED FUNCTIONS AND ADDED FUNCTIONS THAT DON'T EXIST
-
-    /**
-     *	Retrieve Language translations from ExtraInfo
-     */
-    protected function getTranslationsFromExtraInfo($parentGroupName, $translationsObjectName)
-    {
-        $translations = [];
-        $extraInfoData = $this->botClient->getExtraInfo($parentGroupName);
-        if (isset($extraInfoData->results)) {
-            foreach ($extraInfoData->results as $element) {
-                if ($element->name == $translationsObjectName) {
-                    $translations = json_decode(json_encode($element->value), true);
-                    break;
-                }
-            }
-            $language = $this->conf->get('conversation.default.lang');
-            if (isset($translations[$language]) && count($translations[$language]) && is_array($translations[$language][0])) {
-                $this->lang->addTranslations($translations[$language][0]);
-            }
-        }
-    }
-
-
-    /**
-     * 	Checks if a bot response requires escalation to chat
-     */
-    protected function checkEscalation($botResponse)
-    {
-        if (!$this->chatEnabled()) {
-            return false;
-        }
-
-        // Parse bot messages
-        if (isset($botResponse->answers) && is_array($botResponse->answers)) {
-            $messages = $botResponse->answers;
-        } else {
-            $messages = array($botResponse);
-        }
-
-        // Check if BotApi returned 'escalate' flag, an escalation callback on message or triesBeforeEscalation has been reached
-        foreach ($messages as $msg) {
-            $this->updateNoResultsCount($msg);
-
-            $noResultsToEscalateReached = $this->shouldEscalateFromNoResults();
-            $negativeRatingsToEscalateReached = $this->shouldEscalateFromNegativeRating();
-            $apiEscalateFlag = isset($msg->flags) && in_array('escalate', $msg->flags);
-            $apiEscalateDirect = isset($msg->actions) ? $msg->actions[0]->parameters->callback == "escalationStart" : false;
-            $apiEscalateOffer = isset($msg->attributes) ? (isset($msg->attributes->DIRECT_CALL) ? $msg->attributes->DIRECT_CALL == "escalationOffer" : false) : false;
-
-            if ($apiEscalateFlag || $noResultsToEscalateReached || $negativeRatingsToEscalateReached || $apiEscalateDirect || $apiEscalateOffer) {
-
-                // Store into session the escalation type
-                if ($apiEscalateFlag) {
-                    $escalationType = static::ESCALATION_API_FLAG;
-                } elseif ($noResultsToEscalateReached) {
-                    $escalationType = static::ESCALATION_NO_RESULTS;
-                } elseif ($negativeRatingsToEscalateReached) {
-                    $escalationType = static::ESCALATION_NEGATIVE_RATING;
-                } elseif ($apiEscalateOffer) {
-                    $escalationType = static::ESCALATION_OFFER;
-                    $this->session->set('escalationV2', true);
-                } elseif ($apiEscalateDirect) {
-                    $escalationType = static::ESCALATION_DIRECT;
-                    $this->session->set('escalationV2', true);
-                }
-                $this->session->set('escalationType', $escalationType);
-                return true;
-            }
-        }
-        return false;
-    }
-
-
-    /**
-     * Ask the user if wants to talk with a human and handle the answer
-     * @param array $userAnswer = null
-     * @return void
-     */
-    protected function handleEscalation($userAnswer = null)
-    {
-        // Escalate if it has the form done
-        $this->escalateIfFormHasBeenDone();
-
-        // Ask the user if wants to escalate
-        if (!$this->session->get('askingForEscalation', false)) {
-            if ($this->session->get('escalationType') == static::ESCALATION_DIRECT) {
-                $this->sendEscalationStart();
-            } else {
-                // Ask the user if wants to escalate
-                $this->session->set('askingForEscalation', true);
-                $escalationMessage = $this->digester->buildEscalationMessage();
-                $this->externalClient->sendMessage($escalationMessage);
-            }
-            die;
-        } else {
-            // Handle user response to an escalation question
-            $this->session->set('askingForEscalation', false);
-            // Reset escalation counters
-            $this->session->set('noResultsCount', 0);
-            $this->session->set('negativeRatingCount', 0);
-
-            if (is_array($userAnswer) && isset($userAnswer[0]['escalateOption'])) {
-                if ($userAnswer[0]['escalateOption'] === true || $userAnswer[0]['escalateOption'] === 1) {
-                    if ($this->session->get('escalationType') == static::ESCALATION_OFFER) {
-                        $this->sendEscalationStart();
-                    } else {
-                        $this->escalateToAgent();
-                    }
-                } else {
-                    if ($this->session->get('escalationType') == static::ESCALATION_OFFER) {
-                        $message = ["message" => "no"];
-                        $botResponse = $this->sendMessageToBot($message);
-                        $this->sendMessagesToExternal($botResponse);
-                    } else {
-                        $this->sendMessagesToExternal($this->buildTextMessage($this->lang->translate('escalation_rejected')));
-                        $this->trackContactEvent("CONTACT_REJECTED");
-                    }
-                    $this->session->delete('escalationType');
-                    $this->session->delete('escalationV2');
-                }
-                die();
-            }
-        }
-    }
-
-
-    /** NEW FUNCTION
-     * Send the data for start scalation
-     */
-    private function sendEscalationStart()
-    {
-        if ($this->checkAgents()) {
-            $this->setVariableValue("agents_available", "true");
-        } else {
-            $this->setVariableValue("agents_available", "false");
-            $this->session->delete('escalationForm');
-        }
-        $message = ["directCall" => "escalationStart"];
-        $botResponse = $this->sendMessageToBot($message);
-        $this->sendMessagesToExternal($botResponse);
-    }
-
-
-    /** NEW FUNCTION
-     * Check if in the $botResponse exists the "escalateToAgent" callback
-     * @param object $botResponse
-     * @return bool
-     */
-    public function checkEscalationForm($botResponse)
-    {
-        if ($this->session->get('escalationV2', false)) {
-            // Parse bot messages
-            if (isset($botResponse->answers) && is_array($botResponse->answers)) {
-                $messages = $botResponse->answers;
-            } else {
-                $messages = array($botResponse);
-            }
-            // Check if BotApi returned 'escalate' flag on message or triesBeforeEscalation has been reached
-            foreach ($messages as $msg) {
-                $this->updateNoResultsCount($msg);
-                $resetSession  = isset($msg->actions) && isset($msg->actions);
-                if ($resetSession && ($msg->actions[0]->parameters->callback == "escalateToAgent")) {
-                    $data = $msg->actions[0]->parameters->data;
-                    $this->session->set('escalationForm', $data);
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-
-    /** NEW FUNCTION
-     * Escalate to an agent if the escalation form has been done
-     * @return void
-     */
-    public function escalateIfFormHasBeenDone()
-    {
-        if ($this->session->get('escalationV2', false)) {
-            $escalationFormData = $this->session->get('escalationForm', false);
-            if ($escalationFormData) {
-                if ($escalationFormData) {
-                    $this->externalClient->setFullName($escalationFormData->FIRST_NAME . ' ' . $escalationFormData->LAST_NAME);
-                    $this->externalClient->setEmail($escalationFormData->EMAIL_ADDRESS);
-                    $this->externalClient->setExtraInfo((array) $escalationFormData);
-                }
-                $this->escalateToAgent();
-                die;
-            }
-        }
-    }
-
-
-    /**
-     * 	Tries to start a chat with an agent
-     */
-    protected function escalateToAgent()
-    {
-        if ($this->checkAgents()) {
-            // Start chat
-            $this->sendMessagesToExternal($this->buildTextMessage($this->lang->translate('creating_chat')));
-            // Build user data for HyperChat API
-            $chatData = array(
-                'roomId' => $this->conf->get('chat.chat.roomId'),
-                'user' => array(
-                    'name'             => trim($this->externalClient->getFullName()),
-                    'contact'         => trim($this->externalClient->getEmail()),
-                    'externalId'     => $this->externalClient->getExternalId(),
-                    'extraInfo'     => []
-                )
-            );
-            $response =  $this->chatClient->openChat($chatData);
-            if (!isset($response->error) && isset($response->chat)) {
-                $this->session->set('chatOnGoing', $response->chat->id);
-                if ($this->session->get('escalationV2', false)) {
-                    $this->trackContactEvent("CHAT_ATTENDED", $response->chat->id);
-                } else {
-                    $this->trackContactEvent("CONTACT_ATTENDED");
-                }
-            } else {
-                $this->sendMessagesToExternal($this->buildTextMessage($this->lang->translate('error_creating_chat')));
-            }
-        } else {
-            // Send no-agents-available message if the escalation trigger is an API flag (user asked for having a chat explicitly)
-            if ($this->session->get('escalationType') == static::ESCALATION_API_FLAG || $this->session->get('escalationV2', false)) {
-
-                if ($this->session->get('escalationV2', false)) {
-                    $this->setVariableValue("agents_available", "false");
-                    $message = ["directCall" => "escalationStart"];
-                    $botResponse = $this->sendMessageToBot($message);
-                    $this->sendMessagesToExternal($botResponse);
-                } else {
-                    $this->sendMessagesToExternal($this->buildTextMessage($this->lang->translate('no_agents')));
-                }
-            } else if ($this->session->get('escalationV2', false)) {
-                $this->trackContactEvent("CHAT_UNATTENDED");
-            } else {
-                $this->trackContactEvent("CONTACT_UNATTENDED");
-            }
-        }
-        $this->session->delete('escalationType');
-        $this->session->delete('escalationV2');
-    }
-
-
-    /**
-     * 	Check if a bot response should display content-ratings
-     */
-    protected function checkContentRatings($botResponse)
-    {
-        $ratingConf = $this->conf->get('conversation.content_ratings');
-        if (!$ratingConf['enabled']) {
-            return false;
-        }
-
-        // Parse bot messages
-        if (isset($botResponse->answers) && is_array($botResponse->answers)) {
-            $messages = $botResponse->answers;
-        } else {
-            $messages = array($botResponse);
-        }
-
-        // Check messages are answer and have a rate-code
-        $rateCode = false;
-        foreach ($messages as $msg) {
-            $isAnswer            = isset($msg->type) && $msg->type == 'answer';
-            $hasEscalationCallBack = isset($msg->actions) ? $msg->actions[0]->parameters->callback == "escalationStart" : false;
-            $hasEscalationCallBack2 = isset($msg->attributes) ? (isset($msg->attributes->DIRECT_CALL) ? $msg->attributes->DIRECT_CALL == "escalationOffer" : false) : false;
-            $hasEscalationFlag   = isset($msg->flags) && in_array('escalate', $msg->flags);
-            $hasNoRatingsFlag    = isset($msg->flags) && in_array('no-rating', $msg->flags);
-            $hasRatingCode       = isset($msg->parameters) &&
-                isset($msg->parameters->contents) &&
-                isset($msg->parameters->contents->trackingCode) &&
-                isset($msg->parameters->contents->trackingCode->rateCode);
-
-            if ($isAnswer && $hasRatingCode && !$hasEscalationFlag && !$hasNoRatingsFlag && !$hasEscalationCallBack && !$hasEscalationCallBack2) {
-                $rateCode = $msg->parameters->contents->trackingCode->rateCode;
-            }
-        }
-        return $rateCode;
-    }
-
-
-    /**
-     * Function to track CONTACT events
-     * @param string $type Contact type: "CHAT_ATTENDED", "CHAT_UNATTENDED"
-     * @param string $chatId
-     */
-    public function trackContactEvent($type, $chatId = null)
-    {
-        $data = [
-            "type" => $type,
-            "data" => [
-                "value" => "true"
-            ]
-        ];
-        if (!is_null($chatId)) {
-            $chatConfig = $this->conf->get('chat.chat');
-            $region = isset($chatConfig['regionServer']) ? $chatConfig['regionServer'] : 'us';
-            $data["data"]["value"] = [
-                "chatId" => $chatId,
-                "appId" => $chatConfig['appId'],
-                "region" => $region
-            ];
-        }
-
-        $this->botClient->trackEvent($data);
-    }
-
-
-    /**
-     * Set a value of a variable
-     * @param string $varName
-     * @param string $varValue
-     */
-    public function setVariableValue($varName, $varValue)
-    {
-        $variable = [
-            "name" => $varName,
-            "value" => $varValue
-        ];
-        $botVariableResponse = $this->botClientVariables->setVariable($variable);
-
-        if (isset($botVariableResponse->success)) {
-            return $botVariableResponse->success;
-        }
-        return false;
     }
 }
