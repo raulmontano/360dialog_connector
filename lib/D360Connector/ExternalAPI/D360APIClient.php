@@ -4,6 +4,7 @@ namespace Inbenta\D360Connector\ExternalAPI;
 
 use Inbenta\D360Connector\ExternalDigester\D360Digester;
 use GuzzleHttp\Client as Guzzle;
+use Exception;
 
 class D360APIClient
 {
@@ -254,7 +255,7 @@ class D360APIClient
             'text' => $text
         ];
         if (strpos($text, "<") !== false) { //If text has a type of html tags
-            $digester = new D360Digester('', '', '');
+            $digester = new D360Digester('', '', '', '');
             $data = $digester->handleMessageWithImgOrIframe($text);
             $digester->handleMessageWithLinks($text);
             $digester->handleMessageWithTextFormat($text);
@@ -283,5 +284,37 @@ class D360APIClient
                 $this->sendMessage($media);
             }
         }
+    }
+
+    /**
+     * Get the media from 360
+     * @param string $mediaId
+     */
+    public function getMediaFrom360(string $mediaId)
+    {
+        $urlMedia = str_replace("/messages", "/media/".$mediaId, $this->url);
+        $headers = [
+            'D360-Api-Key' => $this->apiKey
+        ];
+
+        try {
+            $client = new Guzzle();
+            $response = $client->get($urlMedia, [
+                'headers' => $headers
+            ]);
+
+            if (method_exists($response, "getBody") && method_exists($response->getBody(), "getContents")) {
+                $fileFormat = explode("/", $response->getHeader('Content-Type')[0]);
+                if (isset($fileFormat[1])) {
+                    return [
+                        "file" => $response->getBody()->getContents(),
+                        "format" => $fileFormat[1]
+                    ];
+                }
+            }
+        } catch(Exception $e) {
+            return "";
+        }
+        return "";
     }
 }

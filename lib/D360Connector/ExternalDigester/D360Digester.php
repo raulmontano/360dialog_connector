@@ -4,6 +4,7 @@ namespace Inbenta\D360Connector\ExternalDigester;
 
 use \Exception;
 use Inbenta\ChatbotConnector\ExternalDigester\Channels\DigesterInterface;
+use Inbenta\D360Connector\Helpers\Helper;
 
 class D360Digester extends DigesterInterface
 {
@@ -11,6 +12,7 @@ class D360Digester extends DigesterInterface
     protected $channel;
     protected $langManager;
     protected $session;
+    protected $externalClient;
     protected $attachableFormats = [
         'image' => ['jpg', 'jpeg', 'png', 'gif'],
         'document' => ['pdf', 'xls', 'xlsx'],
@@ -21,12 +23,13 @@ class D360Digester extends DigesterInterface
     /**
      * Digester contructor
      */
-    public function __construct($langManager, $conf, $session)
+    public function __construct($langManager, $conf, $session, $externalClient)
     {
         $this->langManager = $langManager;
         $this->channel = '360';
         $this->conf = $conf;
         $this->session = $session;
+        $this->externalClient = $externalClient;
     }
 
     /**
@@ -61,76 +64,92 @@ class D360Digester extends DigesterInterface
         $request = json_decode($_request);
 
         $output = [];
-        if ($this->session->has('options')) {
+        if (isset($request->messages) && isset($request->messages[0])) {
+            $message = $request->messages[0];
 
-            $lastUserQuestion = $this->session->get('lastUserQuestion');
-            $options = $this->session->get('options');
+            if ($this->session->has('options')) {
 
-            $this->session->delete('options');
-            $this->session->delete('lastUserQuestion');
-            $this->session->delete('hasRelatedContent');
+                $lastUserQuestion = $this->session->get('lastUserQuestion');
+                $options = $this->session->get('options');
 
-            if (isset($request->messages[0]->text->body)) {
+                $this->session->delete('options');
+                $this->session->delete('lastUserQuestion');
+                $this->session->delete('hasRelatedContent');
 
-                $userMessage = $request->messages[0]->text->body;
+                if (isset($message->text->body)) {
 
-                $selectedOption = false;
-                $selectedOptionText = "";
-                $selectedEscalation = "";
-                $isRelatedContent = false;
-                $isListValues = false;
-                $isPolar = false;
-                $isEscalation = false;
-                $optionSelected = false;
-                foreach ($options as $option) {
-                    if (isset($option->list_values)) {
-                        $isListValues = true;
-                    } else if (isset($option->related_content)) {
-                        $isRelatedContent = true;
-                    } else if (isset($option->is_polar)) {
-                        $isPolar = true;
-                    } else if (isset($option->escalate)) {
-                        $isEscalation = true;
-                    }
-                    if ($userMessage == $option->opt_key || strtolower($userMessage) == strtolower($option->label)) {
-                        if ($isListValues || $isRelatedContent || (isset($option->attributes) && isset($option->attributes->DYNAMIC_REDIRECT) && $option->attributes->DYNAMIC_REDIRECT == 'escalationStart')) {
-                            $selectedOptionText = $option->label;
-                        } else if ($isEscalation) {
-                            $selectedEscalation = $option->escalate;
-                        } else {
-                            $selectedOption = $option;
-                            $lastUserQuestion = isset($option->title) && !$isPolar ? $option->title : $lastUserQuestion;
+                    $userMessage = $message->text->body;
+
+                    $selectedOption = false;
+                    $selectedOptionText = "";
+                    $selectedEscalation = "";
+                    $isRelatedContent = false;
+                    $isListValues = false;
+                    $isPolar = false;
+                    $isEscalation = false;
+                    $optionSelected = false;
+                    foreach ($options as $option) {
+                        if (isset($option->list_values)) {
+                            $isListValues = true;
+                        } else if (isset($option->related_content)) {
+                            $isRelatedContent = true;
+                        } else if (isset($option->is_polar)) {
+                            $isPolar = true;
+                        } else if (isset($option->escalate)) {
+                            $isEscalation = true;
                         }
-                        $optionSelected = true;
-                        break;
+                        if (
+                            $userMessage == $option->opt_key ||
+                            Helper::removeAccentsToLower($userMessage) === Helper::removeAccentsToLower($this->langManager->translate($option->label))
+                        ) {
+                            if ($isListValues || $isRelatedContent || (isset($option->attributes) && isset($option->attributes->DYNAMIC_REDIRECT) && $option->attributes->DYNAMIC_REDIRECT == 'escalationStart')) {
+                                $selectedOptionText = $option->label;
+                            } else if ($isEscalation) {
+                                $selectedEscalation = $option->escalate;
+                            } else {
+                                $selectedOption = $option;
+                                $lastUserQuestion = isset($option->title) && !$isPolar ? $option->title : $lastUserQuestion;
+                            }
+                            $optionSelected = true;
+                            break;
+                        }
                     }
-                }
 
-                if (!$optionSelected) {
-                    if ($isListValues) { //Set again options for variable
-                        $this->session->set('options', $options);
-                        $this->session->set('lastUserQuestion', $lastUserQuestion);
-                    } else if ($isPolar) { //For polar, on wrong answer, goes for NO
-                        $request->messages[0]->text->body = "No";
+                    if (!$optionSelected) {
+                        if ($isListValues) { //Set again options for variable
+                            if ($this->session->get('optionListValues', 0) < 1) { //Make sure only enters here just once
+                                $this->session->set('options', $options);
+                                $this->session->set('lastUserQuestion', $lastUserQuestion);
+                                $this->session->set('optionListValues', 1);
+                            } else {
+                                $this->session->delete('options');
+                                $this->session->delete('lastUserQuestion');
+                                $this->session->delete('optionListValues');
+                            }
+                        } else if ($isPolar) { //For polar, on wrong answer, goes for NO
+                            $message->text->body = "No";
+                        }
                     }
-                }
 
-                if ($selectedOption) {
-                    $output[] = ['option' => $selectedOption->value, 'message' => $lastUserQuestion];
-                } else if ($selectedOptionText !== "") {
-                    $output[] = ['message' => $selectedOptionText];
-                } else if ($isEscalation && $selectedEscalation !== "") {
-                    if ($selectedEscalation === false) {
-                        $output[] = ['message' => "no"];
+                    if ($selectedOption) {
+                        $output[] = ['option' => $selectedOption->value];
+                    } else if ($selectedOptionText !== "") {
+                        $output[] = ['message' => $selectedOptionText];
+                    } else if ($isEscalation && $selectedEscalation !== "") {
+                        if ($selectedEscalation === false) {
+                            $output[] = ['message' => "no"];
+                        } else {
+                            $output[] = ['escalateOption' => $selectedEscalation];
+                        }
                     } else {
-                        $output[] = ['escalateOption' => $selectedEscalation];
+                        $output[] = ['message' => $message->text->body];
                     }
-                } else {
-                    $output[] = ['message' => $request->messages[0]->text->body];
                 }
+            } else if (isset($message->image) || isset($message->document) || isset($message->video) || isset($message->audio)) {
+                $output[0] = $this->mediaFileToHyperchat($message);
+            } else if (isset($message->text)) {
+                $output[0] = ['message' => $message->text->body];
             }
-        } else if (isset($request->messages) && isset($request->messages[0]) && isset($request->messages[0]->text)) {
-            $output[0] = ['message' => $request->messages[0]->text->body];
         }
         return $output;
     }
@@ -637,5 +656,57 @@ class D360Digester extends DigesterInterface
         $output['text'] = $message;
 
         return $output;
+    }
+
+    /**
+     * Check if Hyperchat is running and if the attached file is correct
+     * @param object $request
+     * @return array $output
+     */
+    protected function mediaFileToHyperchat(object $request)
+    {
+        $output = ['message' => ''];
+        $mediaId = "";
+        if (isset($request->image)) {
+            $mediaId = isset($request->image->id) ? $request->image->id : "";
+        } else if (isset($request->document)) {
+            $mediaId = isset($request->document->id) ? $request->document->id : "";
+        } else if (isset($request->video)) {
+            $mediaId = isset($request->video->id) ? $request->video->id : "";
+        } else if (isset($request->audio)) {
+            $mediaId = isset($request->audio->id) ? $request->audio->id : "";
+        }
+        if ($mediaId === "") {
+            return $output; //No file type found
+        }
+
+        if ($this->session->get('chatOnGoing', false)) {
+            $mediaFile = $this->getMediaFile($mediaId);
+            if ($mediaFile !== "") {
+                $output = ['media' => $mediaFile];
+            }
+        }
+        return $output;
+    }
+
+    /**
+     * Get the media file from the 360 response, 
+     * save file into temporal directory to sent to Hyperchat
+     * @param string $mediaId
+     */
+    protected function getMediaFile(string $mediaId)
+    {
+        $fileInfo = $this->externalClient->getMediaFrom360($mediaId);
+        if ($fileInfo !== "") {
+            foreach ($this->attachableFormats as $type => $formats) {
+                if (in_array($fileInfo["format"], $formats)) {
+                    $fileName = sys_get_temp_dir() . "/" . $mediaId . "." . $fileInfo["format"];
+                    $tmpFile = fopen($fileName, "w") or die;
+                    fwrite($tmpFile, $fileInfo["file"]);
+                    return fopen($fileName, 'r');
+                }
+            }
+        }
+        return "";
     }
 }
