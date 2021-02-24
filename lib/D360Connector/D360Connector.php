@@ -56,7 +56,7 @@ class D360Connector extends ChatbotConnector
             // Instance application components
             $externalClient        = new D360APIClient($this->conf->get('360'), $request); // Instance 360 client
             $chatClient            = new D360HyperChatClient($this->conf->get('chat.chat'), $this->lang, $this->session, $this->conf, $externalClient);  // Instance HyperchatClient for 360
-            $externalDigester      = new D360Digester($this->lang, $this->conf->get('conversation.digester'), $this->session, $externalClient); // Instance 360 digester
+            $externalDigester      = new D360Digester($this->lang, $this->conf->get('conversation.digester'), $this->session); // Instance 360 digester
 
             $this->initComponents($externalClient, $chatClient, $externalDigester);
         } catch (Exception $e) {
