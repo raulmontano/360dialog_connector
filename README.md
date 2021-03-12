@@ -137,8 +137,6 @@ Some of the optional features that can be enabled from the configuration files t
     * **regionServer:** The geographical region where the HyperChat app lives.
     * **server:** The Hyperchat server URL assigned to your instance. Ask your Inbenta contact for this configuration parameter.
     * **server_port:** The port where to communicate with the Hyperchat server. It’s defined in your instance → Messenger → Settings → Chat -->Port
-    * **queue:**
-        * **active:** Enable or disable the queue system (“**true**” or “**false**”). It **MUST** be enabled in your instance too (Messenger → Settings → Chat → Queue mode).
 * **triesBeforeEscalation:** Number of no-result answers in a row after the bot should escalate to an agent (if available). Numeric value, not a string. Zero means it’s disabled.
 * **negativeRatingsBeforeEscalation:** Number of negative content ratings in a row after the bot should escalate to an agent (if available). Numeric value, not a string. Zero means it’s disabled.
 * **messenger:** Setting that allow replying to tickets after the agent conversation is closed.

@@ -14,10 +14,7 @@ return [
         'regionServer' => 'us',
         'server' => '', // '<server>',    // Your HyperChat server URL (ask your contact person at Inbenta)
         'server_port' => 443,
-        'surveyId' => '1',
-        'queue' => [
-            'active' => false //true
-        ]
+        'surveyId' => '1'
     ],
     'triesBeforeEscalation' => 2,
     'negativeRatingsBeforeEscalation' => 0,

@@ -7,7 +7,7 @@
 // Inbenta Hyperchat configuration
 return [
     'chat' => [
-        'enabled' => true,
+        'enabled' => false,
         'version' => '1',
         'appId' => '',
         'secret' => '',
@@ -16,13 +16,10 @@ return [
         'source' => 3,             // Numeric value, no string (without quotes)
         'guestName' => '',
         'guestContact' => '',
-        'regionServer' => 'us',
+        'regionServer' => '',
         'server' => '<server>',    // Your HyperChat server URL (ask your contact person at Inbenta)
         'server_port' => 443,
-        'surveyId' => '1',
-        'queue' => [
-            'active' => false
-        ]
+        'surveyId' => ''
     ],
     'triesBeforeEscalation' => 2,
     'negativeRatingsBeforeEscalation' => 0,
