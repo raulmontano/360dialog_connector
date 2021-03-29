@@ -121,14 +121,6 @@ class D360Connector extends ChatbotConnector
     }
 
     /**
-     *	Override useless facebook function from parent
-     */
-    protected function returnOkResponse()
-    {
-        return true;
-    }
-
-    /**
      * 	Display content rating message and its options
      */
     protected function displayContentRatings($rateCode)
@@ -163,6 +155,7 @@ class D360Connector extends ChatbotConnector
                 $this->chatClient->closeChat($chatData);
                 $this->externalClient->sendTextMessage($this->lang->translate('chat_closed'));
                 $this->session->set('chatOnGoing', false);
+                $this->session->delete('escalationForm');
             } else {
                 $this->sendMessagesToChat($digestedRequest);
             }
