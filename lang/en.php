@@ -13,7 +13,7 @@ return array(
     'no_agents' => 'No agents available',
     'queue_estimation_first' => 'There is one person ahead of you.',
     'queue_estimation' => 'There are $queuePosition people ahead of you.',
-    'rate_content_intro' => 'Was this answer helpful? Type one of the following answers:',
+    'rate_content_intro' => 'Was this answer helpful?',
     'thanks' => 'Thanks!',
     'yes' => 'Yes',
     'close_chat_key_word' => '/close',
@@ -22,5 +22,13 @@ return array(
     'no_rating_given' => 'We understand you do not want to rate.',
     'ticket_response_intro' => "Hi, I'm the agent that you spoke to a while ago. My response to your question",
     'ticket_response_info' => "Here is the ticket number for your reference",
-    'ticket_response_end' => "You can now continue chatting with the chatbot. If you want to talk to someone, type 'agent'. Thank you!"
+    'ticket_response_end' => "You can now continue chatting with the chatbot. If you want to talk to someone, type 'agent'. Thank you!",
+    'unable_to_process_file' => "I am still not able to process multimedia files. Please ask me a question.",
+    'invalid_file' => "File format not supported. Try converting it to another format before sending it again.",
+    'user_send_no_valid_file' => "The user has tried to send a file with an unsupported format.",
+    'type_a_number' => 'type a number',
+    'date_format' => 'date format: mm/dd/YYYY',
+    'click_to_choose' => 'Click to choose',
+    'choose_an_option' => 'Choose an option',
+    'no_results' => 'I\'m sorry, I don\'t think I have an answer to this question.'
 );

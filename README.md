@@ -6,16 +6,23 @@ Following are the features supported by this connector:
 
 * FAQ Intents with images, videos and Hyperlinks as external links.
 * Related Contents.
-* Sidebubble Text (Will be appended to the Answer Text when displayed)
-* Multiple options with a limit of 3 elements (Buttons are not supported. But, user can choose by entering a number as a position in the list or natural language matching).
-* Polar Questions (Buttons are not supported. But, user can choose by entering a number as a position in the list or natural language matching).
-* Dialogs(Buttons are not supported. But, use can choose by entering a number as a position in the list or natural language matching).
+* Sidebubble Text (Will be appended to the Answer Text when displayed).
+* Multiple options.
+* Polar Questions.
+* Dialogs.
 * Forms, Actions & Variables (with text transformations where applicable).
 * Hyperchat escalation after X no-results answers (configuration in chat.php).
 * Hyperchat escalation from any content.
 * Translation labels (can be set up in ‘Extra Info’ section of backstage).
 
->**NOTE:** WhatsApp doesn't allow displaying buttons, so **Multiple options**, **Polar questions**, **Chained answers**, **ratings** and **escalation question** will be asked without buttons, the options will be numbered and user will enter the number of their choice.
+>**NOTE 1:** The use of buttons is limited to a maximum of **3** buttons with a length of **20** characters for each button title, consider this when creating intents (**Multiple options**, **List Values**, etc).
+
+>**NOTE 2:** In case you have a content with more than 3 buttons, **360 Connector** will automatically transform it into **Interactive List Messages**. This type of message will display all the options (up to 10) inside a _List Menu_ (this "window" will be displayed after the touch / click of a button).
+
+![readme-img01](public/img/readme_img01.jpg)
+
+![readme-img02](public/img/readme_img02.jpg)
+
 
 ## Configuration
 ### Inbenta Instance
@@ -56,7 +63,13 @@ Even if you have created the ExtraInfo translation, it is mandatory that the lan
 
 **HyperChat integration (optional)**
 
-If you want to use Hyperchat you must subscribe your UI to the Hyperchat events. Open your Messenger instance. Go to Messenger → Settings → Chat → Webhooks. Here, in the ‘Events’ column type “queues:update,invitations:new,invitations:accept,forever:alone,chats:close, messages:new,users:activity”. In the ‘Target’ column paste your UI’s URL, then click on the ‘+’ button on the right.
+If you want to use HyperChat you must subscribe your UI to the Hyperchat events. Open your _Messenger_ instance. Go to Messenger → Settings → HyperChat → Webhooks. 
+
+Here, in the ‘Events’ column type “queues:update,invitations:new,invitations:accept,forever:alone,chats:close, messages:new,users:activity”. In the ‘Target’ column paste your UI’s URL, then click on the ‘+’ button on the right.
+
+Make sure to select the accepted files for **file sharing** (allowed both end-users and agents). Go to Messenger → Settings → HyperChat → Conversation, and add one of the following (if is not in the list): jpeg, png, pdf, xls, xlsx, doc, docx, mp4, avi, mp3, mpeg, ogg.
+
+> Voice format for Whatsapp is **OGG audio** (.oga), make sure to be selected if you want to use it in the escalation.
 
 
 # 360 Dialog 
@@ -137,6 +150,8 @@ Some of the optional features that can be enabled from the configuration files t
     * **regionServer:** The geographical region where the HyperChat app lives.
     * **server:** The Hyperchat server URL assigned to your instance. Ask your Inbenta contact for this configuration parameter.
     * **server_port:** The port where to communicate with the Hyperchat server. It’s defined in your instance → Messenger → Settings → Chat -->Port
+    * **queue:**
+        * **active:** Enable or disable the queue system (“**true**” or “**false**”). It **MUST** be enabled in your instance too (Messenger → Settings → Chat → Queue mode).
 * **triesBeforeEscalation:** Number of no-result answers in a row after the bot should escalate to an agent (if available). Numeric value, not a string. Zero means it’s disabled.
 * **negativeRatingsBeforeEscalation:** Number of negative content ratings in a row after the bot should escalate to an agent (if available). Numeric value, not a string. Zero means it’s disabled.
 * **messenger:** Setting that allow replying to tickets after the agent conversation is closed.
@@ -165,6 +180,8 @@ Some of the optional features that can be enabled from the configuration files t
         * **label:** Key of the label translation to display within the rating option button. The available labels can be configured from **/lang/**. Also can be modified from Backstage as described in section **Create translations object in ExtraInfo (optional)**.
         * **comment:** If **true**, asks for a comment for the rating. It's useful when a user rates a content negatively in order to ask why the negative rating.
         * **isNegative:** If **true**, the bot will increment the negative-comments counter in order to escalate with an agent (if HyperChat **negativeRatingsBeforeEscalation** is configured).
+* **digester**
+    * **active_buttons** Enable or disable the buttons for Multiple Choice Questions (“***true***” or “***false***”). If enabled, consider that Whatsapp only allows a length of 20 characters for the title of the buttons, if longer, the string will not be fully dislplayed. Even if it is not active, polar questions (Yes / No) will always be displayed with buttons.
 
 **ENVIRONMENTS (environments.php)**
 

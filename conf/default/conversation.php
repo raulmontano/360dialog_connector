@@ -12,7 +12,7 @@ return [
             'answerAttributes'      => [
                 'ANSWER_TEXT',
             ],
-            'maxOptions'            => 10,
+            'maxOptions'            => 3,
             'maxRelatedContents'    => 2,
             'skipLastCheckQuestion' => true
         ],
@@ -42,11 +42,7 @@ return [
         ]
     ],
     'digester' => [
-        'button_title' => '',           // Provide the attribute that contains the custom content-title to be displayed in multiple options
-        'url_buttons' => [
-            'attribute_name'    => '',  // Provide the setting that contains an url+title to be displayed as URL button
-            'button_title_var'  => '',  // Provide the property name that contains the button title in the button object
-            'button_url_var'    => '',  // Provide the property name that contains the button URL in the button object
-        ],
+        // Consider that Whatsapp buttons only accepts 20 characters, if this is active, some of your content titles may not be displayed in full
+        'active_buttons' => false, // if "false", instead of buttons there will be a numbered option
     ],
 ];

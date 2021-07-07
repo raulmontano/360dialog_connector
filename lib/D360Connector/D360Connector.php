@@ -171,7 +171,7 @@ class D360Connector extends ChatbotConnector
         }
 
         // If the bot offered Federated Bot options, handle its request
-        if ($this->session->get('federatedSubanswers') && count($digestedRequest) && isset($digestedRequest[0]['message'])) {
+        if ($this->session->get('federatedSubanswers') && is_array($digestedRequest) && isset($digestedRequest[0]['message'])) {
             $selectedAnswer = $digestedRequest[0]['message'];
             $federatedSubanswers = $this->session->get('federatedSubanswers');
             $this->session->delete('federatedSubanswers');
@@ -199,7 +199,7 @@ class D360Connector extends ChatbotConnector
 
         if (count($userAnswer) && isset($userAnswer[0]['message']) && $ratingCode) {
             foreach ($ratingOptions as $index => $option) {
-                if ($index + 1 == (int) $userAnswer[0]['message'] || Helper::removeAccentsToLower($userAnswer[0]['message']) === Helper::removeAccentsToLower($this->lang->translate($option['label']))) {
+                if (Helper::removeAccentsToLower($userAnswer[0]['message']) === Helper::removeAccentsToLower($this->lang->translate($option['label']))) {
                     $event = $this->formatRatingEvent($ratingCode, $option['id']);
                     if (isset($option["comment"]) && $option["comment"]) {
                         $this->session->set('askingRatingComment', $event);
@@ -320,8 +320,8 @@ class D360Connector extends ChatbotConnector
             $lastMessagesId[time()] = $request->messages[0]->id;
 
             foreach ($lastMessagesId as $key => $messageSent) {
-                if ((time() - 120) > $key) {
-                    //Deletes the stored incomming messages with more than 120 seconds
+                if ((time() - 240) > $key) {
+                    //Deletes the stored incomming messages with more than 240 seconds
                     unset($lastMessagesId[$key]);
                 }
             }

@@ -17,7 +17,8 @@ class D360Digester extends DigesterInterface
         'image' => ['jpg', 'jpeg', 'png', 'gif'],
         'document' => ['pdf', 'xls', 'xlsx', 'doc', 'docx'],
         'video' => ['mp4', 'avi'],
-        'audio' => ['mp3']
+        'audio' => ['mp3', 'mpeg', 'aac', 'wav', 'wma', 'ogg', 'm4a'],
+        'voice' => ['ogg']
     ];
 
     /**
@@ -62,93 +63,125 @@ class D360Digester extends DigesterInterface
     public function digestToApi($_request)
     {
         $request = json_decode($_request);
-
         $output = [];
+
         if (isset($request->messages) && isset($request->messages[0])) {
             $message = $request->messages[0];
 
             if ($this->session->has('options')) {
-
-                $lastUserQuestion = $this->session->get('lastUserQuestion');
-                $options = $this->session->get('options');
-
-                $this->session->delete('options');
-                $this->session->delete('lastUserQuestion');
-                $this->session->delete('hasRelatedContent');
-
-                if (isset($message->text->body)) {
-
-                    $userMessage = $message->text->body;
-
-                    $selectedOption = false;
-                    $selectedOptionText = "";
-                    $selectedEscalation = "";
-                    $isRelatedContent = false;
-                    $isListValues = false;
-                    $isPolar = false;
-                    $isEscalation = false;
-                    $optionSelected = false;
-                    foreach ($options as $option) {
-                        if (isset($option->list_values)) {
-                            $isListValues = true;
-                        } else if (isset($option->related_content)) {
-                            $isRelatedContent = true;
-                        } else if (isset($option->is_polar)) {
-                            $isPolar = true;
-                        } else if (isset($option->escalate)) {
-                            $isEscalation = true;
-                        }
-                        if (
-                            $userMessage == $option->opt_key ||
-                            Helper::removeAccentsToLower($userMessage) === Helper::removeAccentsToLower($this->langManager->translate($option->label))
-                        ) {
-                            if ($isListValues || $isRelatedContent || (isset($option->attributes) && isset($option->attributes->DYNAMIC_REDIRECT) && $option->attributes->DYNAMIC_REDIRECT == 'escalationStart')) {
-                                $selectedOptionText = $option->label;
-                            } else if ($isEscalation) {
-                                $selectedEscalation = $option->escalate;
-                            } else {
-                                $selectedOption = $option;
-                                $lastUserQuestion = isset($option->title) && !$isPolar ? $option->title : $lastUserQuestion;
-                            }
-                            $optionSelected = true;
-                            break;
-                        }
-                    }
-
-                    if (!$optionSelected) {
-                        if ($isListValues) { //Set again options for variable
-                            if ($this->session->get('optionListValues', 0) < 1) { //Make sure only enters here just once
-                                $this->session->set('options', $options);
-                                $this->session->set('lastUserQuestion', $lastUserQuestion);
-                                $this->session->set('optionListValues', 1);
-                            } else {
-                                $this->session->delete('options');
-                                $this->session->delete('lastUserQuestion');
-                                $this->session->delete('optionListValues');
-                            }
-                        } else if ($isPolar) { //For polar, on wrong answer, goes for NO
-                            $message->text->body = "No";
-                        }
-                    }
-
-                    if ($selectedOption) {
-                        $output[] = ['option' => $selectedOption->value];
-                    } else if ($selectedOptionText !== "") {
-                        $output[] = ['message' => $selectedOptionText];
-                    } else if ($isEscalation && $selectedEscalation !== "") {
-                        if ($selectedEscalation === false) {
-                            $output[] = ['message' => "no"];
-                        } else {
-                            $output[] = ['escalateOption' => $selectedEscalation];
-                        }
+                $output = $this->checkOptions($message);
+            }
+            if (count($output) == 0 && (isset($message->interactive->button_reply) || isset($message->interactive->list_reply))) {
+                $reply = isset($message->interactive->button_reply) ? $message->interactive->button_reply : $message->interactive->list_reply;
+                if (isset($reply->id)) {
+                    if (is_numeric($reply->id)) {
+                        $output[0] = ['option' => $reply->id];
+                    } else if (strpos($reply->id, '_d-c_') !== false) {
+                        $output[0] = ['directCall' => str_replace('_d-c_', '', $reply->id)];
                     } else {
-                        $output[] = ['message' => $message->text->body];
+                        $output[0] = ['message' => $reply->id];
                     }
                 }
-            } else if (isset($message->image) || isset($message->document) || isset($message->video) || isset($message->audio)) {
-                $output = $this->mediaFileToHyperchat($message);
-            } else if (isset($message->text)) {
+            } else if (count($output) == 0 && isset($message->text)) {
                 $output[0] = ['message' => $message->text->body];
+            }
+            if (isset($message->image) || isset($message->document) || isset($message->video)
+                || isset($message->audio) || isset($message->voice)) {
+                $output = $this->mediaFileToHyperchat($message);
+            }
+        }
+        return $output;
+    }
+
+    /**
+     * Check if the response has options
+     * @param object $userMessage
+     * @return array $output
+     */
+    protected function checkOptions(object $message)
+    {
+        $output = [];
+        $lastUserQuestion = $this->session->get('lastUserQuestion');
+        $options = $this->session->get('options');
+
+        $this->session->delete('options');
+        $this->session->delete('lastUserQuestion');
+        $this->session->delete('hasRelatedContent');
+
+        if (isset($message->interactive->button_reply) || isset($message->interactive->list_reply)) {
+            $reply = isset($message->interactive->button_reply) ? $message->interactive->button_reply : $message->interactive->list_reply;
+            if (isset($reply->id) && (strpos($reply->id, 'list_values_') !== false || strpos($reply->id, 'escalation_') !== false)) {
+                $message->text->body = str_replace('list_values_', '', $reply->id);
+                $message->text->body = str_replace('escalation_', '', $message->text->body);
+            }
+        }
+
+        if (isset($message->text->body)) {
+            $userMessage = $message->text->body;
+
+            $selectedOption = false;
+            $selectedOptionText = "";
+            $selectedEscalation = "";
+            $isRelatedContent = false;
+            $isListValues = false;
+            $isPolar = false;
+            $isEscalation = false;
+            $optionSelected = false;
+            foreach ($options as $option) {
+                if (isset($option->list_values)) {
+                    $isListValues = true;
+                } else if (isset($option->related_content)) {
+                    $isRelatedContent = true;
+                } else if (isset($option->is_polar)) {
+                    $isPolar = true;
+                } else if (isset($option->escalate)) {
+                    $isEscalation = true;
+                }
+                if (
+                    ((!$this->conf['active_buttons'] || $isEscalation || $isListValues) && $userMessage == $option->opt_key) ||
+                    Helper::removeAccentsToLower($userMessage) === Helper::removeAccentsToLower($this->langManager->translate($option->label))
+                ) {
+                    if ($isListValues || $isRelatedContent || (isset($option->attributes) && isset($option->attributes->DYNAMIC_REDIRECT) && $option->attributes->DYNAMIC_REDIRECT == 'escalationStart')) {
+                        $selectedOptionText = $option->label;
+                    } else if ($isEscalation) {
+                        $selectedEscalation = $option->escalate;
+                    } else {
+                        $selectedOption = $option;
+                        $lastUserQuestion = isset($option->title) && !$isPolar ? $option->title : $lastUserQuestion;
+                    }
+                    $optionSelected = true;
+                    break;
+                }
+            }
+
+            if (!$optionSelected) {
+                if ($isListValues) { //Set again options for variable
+                    if ($this->session->get('optionListValues', 0) < 1) { //Make sure only enters here just once
+                        $this->session->set('options', $options);
+                        $this->session->set('lastUserQuestion', $lastUserQuestion);
+                        $this->session->set('optionListValues', 1);
+                    } else {
+                        $this->session->delete('options');
+                        $this->session->delete('lastUserQuestion');
+                        $this->session->delete('optionListValues');
+                    }
+                } else if ($isPolar) { //For polar, on wrong answer, goes for NO
+                    $message->text->body = $this->langManager->translate('no');
+                }
+            }
+
+            if ($selectedOption) {
+                $output[] = ['option' => $selectedOption->value];
+            } else if ($selectedOptionText !== "") {
+                $output[] = ['message' => $selectedOptionText];
+            } else if ($isEscalation && $selectedEscalation !== "") {
+                if ($selectedEscalation === false) {
+                    $output[] = ['message' => $this->langManager->translate('no')];
+                } else {
+                    $output[] = ['escalateOption' => $selectedEscalation];
+                }
+            } else {
+                $output[] = ['message' => $message->text->body];
             }
         }
         return $output;
@@ -260,14 +293,24 @@ class D360Digester extends DigesterInterface
             $messageTxt .= "\n" . $message->attributes->SIDEBUBBLE_TEXT;
         }
 
-        $output = $this->handleMessageWithImgOrIframe($messageTxt);
-        $this->handleMessageWithActionField($message, $messageTxt, $lastUserQuestion);
-        $this->handleMessageWithRelatedContent($message, $messageTxt, $lastUserQuestion);
+        $outputTmp = $this->handleMessageWithImgOrIframe($messageTxt);
+        $actionFieldList = $this->handleMessageWithActionField($message, $messageTxt, $lastUserQuestion);
         $this->handleMessageWithLinks($messageTxt);
         $this->handleMessageWithTextFormat($messageTxt);
 
-        // Add simple text-answer
-        $output["text"] = $this->formatFinalMessage($messageTxt);
+        if (count($outputTmp) > 0) {
+            $output[] = $outputTmp;
+        }
+        if (count($actionFieldList) > 0) {
+            $output[] = $actionFieldList;
+        } else {
+            $output[]['text'] = $this->formatFinalMessage($messageTxt);
+        }
+
+        $relatedContent = $this->handleMessageWithRelatedContent($message, $lastUserQuestion);
+        if (count($relatedContent) > 0) {
+            $output[] = $relatedContent;
+        }
 
         return $output;
     }
@@ -275,11 +318,12 @@ class D360Digester extends DigesterInterface
 
     protected function digestFromApiMultipleChoiceQuestion($message, $lastUserQuestion, $isPolar = false)
     {
-        $output = [
-            "text" => $this->formatFinalMessage($message->message),
-        ];
-
+        $title = $this->formatFinalMessage($message->message);
+        $messageTmp = $title;
         $options = $message->options;
+        $buttons = [];
+        $rows = [];
+        $isButton = ($isPolar || count($options) <= 3) ? true : false;
 
         foreach ($options as $i => &$option) {
             $option->opt_key = $i + 1;
@@ -288,8 +332,43 @@ class D360Digester extends DigesterInterface
             } else if ($isPolar) {
                 $option->is_polar = true;
             }
-            $output['text'] .= "\n" . $option->opt_key . ') ' . $option->label;
+
+            if ($this->conf['active_buttons'] || $isPolar) {
+                if ($i == 10) break;
+
+                $id_button = (string) $option->value;
+                if (isset($option->attributes->DIRECT_CALL) && $option->attributes->DIRECT_CALL !== '') {
+                    $id_button = '_d-c_' . $option->attributes->DIRECT_CALL;
+                }
+
+                $rowButton = [
+                    "id" => $id_button,
+                    "title" => $option->label
+                ];
+                if ($isButton) {
+                    $buttons[] = [
+                        "type" => "reply",
+                        "reply" => $rowButton
+                    ];
+                } else {
+                    $rows[] = $rowButton;
+                }
+            } else {
+                $messageTmp .= "\n" . $option->opt_key . ') ' . $option->label;
+            }
         }
+        if ($this->conf['active_buttons'] || $isPolar) {
+            if (count($buttons) > 0) {
+                $output = $this->makeButtons($title, $buttons);
+            } else if (count($rows) > 0) {
+                $clickMessage = $this->langManager->translate('click_to_choose');
+                $chooseMessage = $this->langManager->translate('choose_an_option');
+                $output = $this->makeButtonsList($title, $clickMessage, $chooseMessage, $rows);
+            }
+        } else {
+            $output = ["text" => $messageTmp];
+        }
+
         $this->session->set('options', $options);
         $this->session->set('lastUserQuestion', $lastUserQuestion);
 
@@ -359,11 +438,18 @@ class D360Digester extends DigesterInterface
      */
     public function buildContentRatingsMessage($ratingOptions, $rateCode)
     {
-        $message = $this->langManager->translate('rate_content_intro') . "\n";
+        $message = $this->langManager->translate('rate_content_intro');
+        $buttons = [];
         foreach ($ratingOptions as $index => $option) {
-            $message .= "\n" . ($index + 1) . ") " . $this->langManager->translate($option['label']);
+            $buttons[] = [
+                "type" => "reply",
+                "reply" => [
+                    "id" => $this->langManager->translate($option['label']),
+                    "title" => $this->langManager->translate($option['label'])
+                ]
+            ];
         }
-        $output["text"] = $message;
+        $output = $this->makeButtons($message, $buttons);
         return $output;
     }
 
@@ -407,41 +493,62 @@ class D360Digester extends DigesterInterface
     {
         if (isset($message->actionField) && !empty($message->actionField)) {
             if ($message->actionField->fieldType === 'list') {
-                $options = $this->handleMessageWithListValues($message->actionField->listValues, $lastUserQuestion);
-                if ($options !== "") {
-                    $messageTxt .= " (type a number)";
-                    $messageTxt .= $options;
+                $messageListValues = $this->handleMessageWithListValues($messageTxt, $message->actionField->listValues, $lastUserQuestion);
+                if (is_array($messageListValues)) {
+                    return $messageListValues;
+                } else {
+                    $messageTxt .= " (" . $this->langManager->translate('type_a_number') . ")";
+                    $messageTxt .= $messageListValues;
                 }
             } else if ($message->actionField->fieldType === 'datePicker') {
-                $messageTxt .= " (date format: mm/dd/YYYY)";
+                $messageTxt .= " (" . $this->langManager->translate('date_format') . ")";
             }
         }
+        return [];
     }
 
     /**
      * Validate if the message has related content and put like an option list
      */
-    private function handleMessageWithRelatedContent($message, &$messageTxt, $lastUserQuestion)
+    private function handleMessageWithRelatedContent($message, $lastUserQuestion)
     {
+        $output = [];
         if (isset($message->parameters->contents->related->relatedContents) && !empty($message->parameters->contents->related->relatedContents)) {
-            $messageTxt .= "\r\n \r\n" . $message->parameters->contents->related->relatedTitle . " (type a number)";
-
             $options = [];
+            $buttons = [];
             $optionList = "";
             foreach ($message->parameters->contents->related->relatedContents as $key => $relatedContent) {
-                $options[$key] = (object) [];
-                $options[$key]->opt_key = $key + 1;
-                $options[$key]->related_content = true;
-                $options[$key]->label = $relatedContent->title;
-                $optionList .= "\n\n" . ($key + 1) . ') ' . $relatedContent->title;
+                $options[$key] = (object) [
+                    'related_content' => true,
+                    'label' => $relatedContent->title,
+                    'opt_key' => $key + 1
+                ];
+                if ($this->conf['active_buttons']) {
+                    if ($key == 3) break;
+                    $buttons[] = [
+                        "type" => "reply",
+                        "reply" => [
+                            "id" => (string) $relatedContent->id,
+                            "title" => $relatedContent->title
+                        ]
+                    ];
+                } else {
+                    $optionList .= "\n\n" . ($key + 1) . ') ' . $relatedContent->title;
+                }
             }
-            if ($optionList !== "") {
-                $messageTxt .= $optionList;
+            if (count($options) > 0) {
+                $title = $message->parameters->contents->related->relatedTitle;
+                if ($this->conf['active_buttons']) {
+                    $output = $this->makeButtons($title, $buttons);
+                } else {
+                    $output = ['text' => $title . $optionList];
+                }
                 $this->session->set('hasRelatedContent', true);
                 $this->session->set('options', (object) $options);
                 $this->session->set('lastUserQuestion', $lastUserQuestion);
             }
         }
+        return $output;
     }
 
     /**
@@ -533,21 +640,54 @@ class D360Digester extends DigesterInterface
     /**
      * Set the options for message with list values
      */
-    protected function handleMessageWithListValues($listValues, $lastUserQuestion)
+    protected function handleMessageWithListValues($messageTxt, $listValues, $lastUserQuestion)
     {
-        $optionList = "";
         $options = $listValues->values;
+        $optionList = "";
+        $buttons = [];
+        $rows = [];
+        $isButton = count($options) <= 3 ? true : false;
         foreach ($options as $i => &$option) {
             $option->opt_key = $i + 1;
             $option->list_values = true;
             $option->label = $option->option;
-            $optionList .= "\n" . $option->opt_key . ') ' . $option->label;
+
+            if ($this->conf['active_buttons']) {
+                if ($i == 10) break;
+                $rowButton = [
+                    "id" => "list_values_" . $option->opt_key,
+                    "title" => $option->option
+                ];
+                if ($isButton) {
+                    $buttons[] = [
+                        "type" => "reply",
+                        "reply" => $rowButton
+                    ];
+                } else {
+                    $rows[] = $rowButton;
+                }
+            } else {
+                $optionList .= "\n" . $option->opt_key . ') ' . $option->label;
+            }
         }
-        if ($optionList !== "") {
+        if ($this->conf['active_buttons']) {
+            $output = [];
+            if (count($buttons) > 0) {
+                $output = $this->makeButtons($messageTxt, $buttons);
+            } else if (count($rows) > 0) {
+                $clickMessage = $this->langManager->translate('click_to_choose');
+                $chooseMessage = $this->langManager->translate('choose_an_option');
+                $output = $this->makeButtonsList($messageTxt, $clickMessage, $chooseMessage, $rows);
+            }
+        } else {
+            $output = $optionList;
+        }
+
+        if (count($buttons) > 0 || count($rows) > 0 || $optionList !== '') {
             $this->session->set('options', $options);
             $this->session->set('lastUserQuestion', $lastUserQuestion);
         }
-        return $optionList;
+        return $output;
     }
 
 
@@ -558,27 +698,25 @@ class D360Digester extends DigesterInterface
     {
         if ($messageTxt !== "") {
             $dom = new \DOMDocument();
-            $dom->loadHTML($messageTxt);
+            @$dom->loadHTML(mb_convert_encoding($messageTxt, 'HTML-ENTITIES', 'UTF-8'));
             $nodes = $dom->getElementsByTagName('a');
-
             $urls = [];
             $value = [];
             foreach ($nodes as $node) {
                 $urls[] = $node->getAttribute('href');
                 $value[] = trim($node->nodeValue);
             }
-
             if (strpos($messageTxt, '<a ') !== false && count($urls) > 0) {
                 $countLinks = substr_count($messageTxt, "<a ");
                 $lastPosition = 0;
                 for ($i = 0; $i < $countLinks; $i++) {
                     $firstPosition = strpos($messageTxt, "<a ", $lastPosition);
                     $lastPosition = strpos($messageTxt, "</a>", $firstPosition);
-
                     if (isset($urls[$i]) && $lastPosition > 0) {
                         $aTag = substr($messageTxt, $firstPosition, $lastPosition - $firstPosition + 4);
                         $textToReplace = $value[$i] !== "" ? $value[$i] . " (" . $urls[$i] . ")" : $urls[$i];
                         $messageTxt = str_replace($aTag, $textToReplace, $messageTxt);
+                        $lastPosition = strpos($messageTxt, $textToReplace, $firstPosition);
                     }
                 }
             }
@@ -635,26 +773,26 @@ class D360Digester extends DigesterInterface
      */
     public function buildEscalationMessage()
     {
-        $escalateOptions = [
-            (object) [
-                "label" => 'yes',
-                "escalate" => true,
-                "opt_key" => 1
-            ],
-            (object) [
-                "label" => 'no',
-                "escalate" => false,
-                "opt_key" => 2
-            ],
-        ];
-
+        $message = $this->langManager->translate('ask_to_escalate');
+        $escalateOptions = [];
+        $buttons = [];
+        $options = ['yes', 'no'];
+        foreach ($options as $index => $option) {
+            $buttons[] = [
+                'type' => 'reply',
+                'reply' => [
+                    'id' => 'escalation_' . ($index + 1),
+                    'title' => $this->langManager->translate($option)
+                ]
+            ];
+            $escalateOptions[] = (object) [
+                'label' => $this->langManager->translate($option),
+                'escalate' => $option == 'yes',
+                'opt_key' =>  $index + 1
+            ];
+        }
         $this->session->set('options', (object) $escalateOptions);
-        //$this->session->set('lastUserQuestion', $lastUserQuestion);
-        $message = $this->langManager->translate('ask_to_escalate') . "\n";
-        $message .= "1) " . $this->langManager->translate('yes') . "\n";
-        $message .= "2) " . $this->langManager->translate('no');
-        $output['text'] = $message;
-
+        $output = $this->makeButtons($message, $buttons);
         return $output;
     }
 
@@ -665,35 +803,44 @@ class D360Digester extends DigesterInterface
      */
     protected function mediaFileToHyperchat(object $request)
     {
-        $output = [['message' => '']];
-        $mediaId = "";
-        $caption = "";
-        if (isset($request->image)) {
-            $mediaId = isset($request->image->id) ? $request->image->id : "";
-            $caption = isset($request->image->caption) ? $request->image->caption : "";
-        } else if (isset($request->document)) {
-            $mediaId = isset($request->document->id) ? $request->document->id : "";
-            $caption = isset($request->document->caption) ? $request->document->caption : "";
-        } else if (isset($request->video)) {
-            $mediaId = isset($request->video->id) ? $request->video->id : "";
-            $caption = isset($request->video->caption) ? $request->video->caption : "";
-        } else if (isset($request->audio)) {
-            $mediaId = isset($request->audio->id) ? $request->audio->id : "";
-            $caption = isset($request->audio->caption) ? $request->audio->caption : "";
-        }
-        if ($mediaId === "") {
-            return $output; //No file type found
-        }
-
+        $output = [];
         if ($this->session->get('chatOnGoing', false)) {
-            $mediaFile = $this->getMediaFile($mediaId);
-            if ($mediaFile !== "") {
-                unset($output[0]);
-                if ($caption !== "") {
-                    $output[] = ['message' => $caption];
-                }
-                $output[] = ['media' => $mediaFile];
+            $mediaId = "";
+            $caption = "";
+            if (isset($request->image)) {
+                $mediaId = isset($request->image->id) ? $request->image->id : "";
+                $caption = isset($request->image->caption) ? $request->image->caption : "";
+            } else if (isset($request->document)) {
+                $mediaId = isset($request->document->id) ? $request->document->id : "";
+                $caption = isset($request->document->caption) ? $request->document->caption : "";
+            } else if (isset($request->video)) {
+                $mediaId = isset($request->video->id) ? $request->video->id : "";
+                $caption = isset($request->video->caption) ? $request->video->caption : "";
+            } else if (isset($request->audio)) {
+                $mediaId = isset($request->audio->id) ? $request->audio->id : "";
+                $caption = isset($request->audio->caption) ? $request->audio->caption : "";
+            } else if (isset($request->voice)) {
+                $mediaId = isset($request->voice->id) ? $request->voice->id : "";
+                $caption = isset($request->voice->caption) ? $request->voice->caption : "";
             }
+            if ($mediaId === "") {
+                $output[] = ['message' => $this->langManager->translate('user_send_no_valid_file')];
+                $this->externalClient->sendTextMessage('_' . $this->langManager->translate('invalid_file') . '_');
+            } else {
+                $mediaFile = $this->getMediaFile($mediaId);
+                if ($mediaFile !== "") {
+                    unset($output[0]);
+                    if ($caption !== "") {
+                        $output[] = ['message' => $caption];
+                    }
+                    $output[] = ['media' => $mediaFile];
+                } else {
+                    $output[] = ['message' => '(' . $this->langManager->translate('user_send_no_valid_file') . ')'];
+                    $this->externalClient->sendTextMessage('_' . $this->langManager->translate('invalid_file') . '_');
+                }
+            }
+        } else {
+            $this->externalClient->sendTextMessage($this->langManager->translate('unable_to_process_file'));
         }
         return $output;
     }
@@ -708,6 +855,8 @@ class D360Digester extends DigesterInterface
         $fileInfo = $this->externalClient->getMediaFrom360($mediaId);
         if ($fileInfo !== "") {
             foreach ($this->attachableFormats as $formats) {
+                // If file format contains extra info other than the proper file format, strip it. (example: "ogg; codecs=opus" will be "ogg")
+                $fileInfo["format"] = explode(";", $fileInfo["format"], 2)[0];
                 if (in_array($fileInfo["format"], $formats)) {
                     $fileName = sys_get_temp_dir() . "/" . $mediaId . "." . $fileInfo["format"];
                     $tmpFile = fopen($fileName, "w") or die;
@@ -720,5 +869,65 @@ class D360Digester extends DigesterInterface
             }
         }
         return "";
+    }
+
+    /**
+     * Structure for buttons (from 1 to 3 elements)
+     * @param string $message
+     * @param array $buttons
+     * @return array
+     */
+    protected function makeButtons(string $message, array $buttons)
+    {
+        foreach ($buttons as $index => $button) {
+            $button['reply']['title'] = trim($button['reply']['title']);
+            if (strlen($button['reply']['title']) > 20) {
+                $buttons[$index]['reply']['title'] = substr($button['reply']['title'], 0, 20);
+            }
+        }
+        return [
+            "interactive" => [
+                "type" => "button",
+                "body" => [
+                    "text" => trim($message)
+                ],
+                "action" => [
+                    "buttons" => $buttons
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Structure for buttons list (from 4 to 10 elements)
+     * @param string $message
+     * @param array $buttons
+     * @return array
+     */
+    protected function makeButtonsList(string $message, string $buttonText, string $subtitle, array $buttons)
+    {
+        foreach ($buttons as $index => $button) {
+            $button['title'] = trim($button['title']);
+            if (strlen($button['title']) > 20) {
+                $buttons[$index]['title'] = substr($button['title'], 0, 20);
+            }
+        }
+        return [
+            "interactive" => [
+                "type" => "list",
+                "body" => [
+                    "text" => trim($message)
+                ],
+                "action" => [
+                    "button" => trim($buttonText),
+                    "sections" => [
+                        [
+                            "title" => trim($subtitle),
+                            "rows" => $buttons
+                        ]
+                    ]
+                ]
+            ]
+        ];
     }
 }
