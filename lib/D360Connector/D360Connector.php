@@ -10,7 +10,7 @@ use Inbenta\D360Connector\ExternalAPI\D360APIClient;
 use Inbenta\D360Connector\ExternalDigester\D360Digester;
 use Inbenta\D360Connector\HyperChatAPI\D360HyperChatClient;
 use Inbenta\D360Connector\Helpers\Helper;
-use Inbenta\D360Connector\MessengerAPI\MessengerAPI;
+use Inbenta\ChatbotConnector\MessengerAPI\MessengerAPIClient;
 use Inbenta\D360Connector\SubscribeWebhook;
 
 
@@ -35,33 +35,51 @@ class D360Connector extends ChatbotConnector
                 'environment' => $this->environment,
                 'source' => $this->conf->get('conversation.source')
             ];
-
-            $this->session = new SessionManager($this->getExternalIdFromRequest());
+            $externalId = $this->getExternalIdFromRequest();
+            $this->session = new SessionManager($externalId);
             $this->validatePreviousMessages($request);
 
+            $this->storeExternalId($externalId);
+
             $this->botClient = new ChatbotAPIClient($this->conf->get('api.key'), $this->conf->get('api.secret'), $this->session, $conversationConf);
+
+            if ($this->conf->get('api.messenger.key') !== '' && $this->conf->get('api.messenger.secret') !== '') {
+                $this->messengerClient = new MessengerAPIClient($this->conf->get('api.messenger.key'), $this->conf->get('api.messenger.secret'), $this->session);
+            }
 
             // Try to get the translations from ExtraInfo and update the language manager
             $this->getTranslationsFromExtraInfo('360', 'translations');
 
             // Initialize Hyperchat events handler
             if ($this->conf->get('chat.chat.enabled') && ($this->session->get('chatOnGoing', false) || isset($_SERVER['HTTP_X_HOOK_SECRET']))) {
-                $chatEventsHandler = new D360HyperChatClient($this->conf->get('chat.chat'), $this->lang, $this->session, $this->conf, $this->externalClient);
+                $chatEventsHandler = new D360HyperChatClient($this->conf->get('chat.chat'), $this->lang, $this->session, $this->conf, $this->externalClient, $this->messengerClient);
                 $chatEventsHandler->handleChatEvent();
-            } else if (isset($_SERVER['HTTP_X_HOOK_SIGNATURE']) && $_SERVER['HTTP_X_HOOK_SIGNATURE'] == $this->conf->get('chat.messenger.webhook_secret')) {
-                $messengerAPI = new MessengerAPI($this->conf, $this->lang, $this->session);
-                $messengerAPI->handleMessageFromClosedTicket($request);
+            } else if (isset($_SERVER['HTTP_X_HOOK_SIGNATURE']) && $_SERVER['HTTP_X_HOOK_SIGNATURE'] == $this->conf->get('api.messenger.webhook_secret')) {
+                $this->handleMessageFromClosedTicket($request, $this->conf->get('360'));
             }
 
             // Instance application components
             $externalClient        = new D360APIClient($this->conf->get('360'), $request); // Instance 360 client
-            $chatClient            = new D360HyperChatClient($this->conf->get('chat.chat'), $this->lang, $this->session, $this->conf, $externalClient);  // Instance HyperchatClient for 360
+            $chatClient            = new D360HyperChatClient($this->conf->get('chat.chat'), $this->lang, $this->session, $this->conf, $externalClient, $this->messengerClient);  // Instance HyperchatClient for 360
             $externalDigester      = new D360Digester($this->lang, $this->conf->get('conversation.digester'), $this->session, $externalClient); // Instance 360 digester
 
             $this->initComponents($externalClient, $chatClient, $externalDigester);
         } catch (Exception $e) {
             echo json_encode(["error" => $e->getMessage()]);
             die();
+        }
+    }
+
+    /**
+     * Save in session the external Id
+     */
+    protected function storeExternalId($externalId)
+    {
+        if (is_null($this->session->get('externalId'))) {
+            $externalId = D360APIClient::getIdFromExternalId($externalId);
+            if ($externalId !== '') {
+                $this->session->set('externalId', $externalId);
+            }
         }
     }
 
@@ -139,6 +157,9 @@ class D360Connector extends ChatbotConnector
      */
     protected function handleNonBotActions($digestedRequest)
     {
+        //Check if a survey is running
+        $this->handleSurvey($digestedRequest);
+
         // If there is a active chat, send messages to the agent
         if ($this->chatOnGoing()) {
             if ($this->isCloseChatCommand($digestedRequest)) {
@@ -151,7 +172,6 @@ class D360Connector extends ChatbotConnector
                         'extraInfo' => []
                     ]
                 ];
-                define('APP_SECRET', $this->conf->get('chat.chat.secret'));
                 $this->chatClient->closeChat($chatData);
                 $this->externalClient->sendTextMessage($this->lang->translate('chat_closed'));
                 $this->session->set('chatOnGoing', false);
@@ -314,7 +334,7 @@ class D360Connector extends ChatbotConnector
             if (!is_array($lastMessagesId)) {
                 $lastMessagesId = [];
             }
-            if (in_array($request->messages[0]->id, $lastMessagesId) ) {
+            if (in_array($request->messages[0]->id, $lastMessagesId)) {
                 die;
             }
             $lastMessagesId[time()] = $request->messages[0]->id;
@@ -327,5 +347,79 @@ class D360Connector extends ChatbotConnector
             }
             $this->session->set('lastMessagesId', $lastMessagesId);
         }
+    }
+
+    /**
+     * Before calling to the parent handleRequest() validate if there is a survey confirmation
+     */
+    public function handleRequest()
+    {
+        $this->surveyConfirm();
+        parent::handleRequest();
+    }
+
+    /**
+     * Check if the confirmation for the survey exists
+     */
+    public function surveyConfirm()
+    {
+        if ($this->session->get('surveyConfirm')) {
+            if ($this->conf->get('chat.chat.survey.confirmToStart')) {
+                $this->validateIfAskForSurvey();
+            } else { //Direct survey, without confirm to start
+                $this->externalClient->setSenderFromId($this->session->get('externalId'));
+                $this->processSurveyData($this->session->get('surveyElements'));
+                $this->session->delete('surveyConfirm');
+                $this->session->set('surveyLaunch', true);
+            }
+        }
+    }
+
+    /**
+     * Handle the incoming message from the ticket
+     * @param object $request
+     * @return void
+     */
+    public function handleMessageFromClosedTicket($request, $config360)
+    {
+        if (
+            !is_null($this->messengerClient) && isset($request->events[0]->resource_data->creator->identifier)
+            && isset($request->events[0]->resource) && isset($request->events[0]->action_data->text)
+        ) {
+            $userEmail = $request->events[0]->resource_data->creator->identifier;
+            $ticketNumber = $request->events[0]->resource;
+            $message = $request->events[0]->action_data->text;
+
+            if ($userEmail !== "") {
+                $response = $this->messengerClient->getUserByParam('address', $userEmail);
+                if (
+                    isset($response->data[0]->extra[0]->id) && isset($response->data[0]->extra[0]->content) &&
+                    $response->data[0]->extra[0]->id == 2 && $response->data[0]->extra[0]->content !== ""
+                ) {
+                    $number = $response->data[0]->extra[0]->content;
+                    if (strpos($number, "-") > 0) {
+                        $number = str_replace("d360-", "", $number);
+
+                        $intro = $this->lang->translate('ticket_response_intro');
+                        $ticketInfo = $this->lang->translate('ticket_response_info');
+                        $end = $this->lang->translate('ticket_response_end');
+
+                        $newMessage = "_" . $intro . ":_\n";
+                        $newMessage .= $message . "\n\n";
+                        $newMessage .= "_" . $ticketInfo . ": *" . $ticketNumber . "*_\n";
+                        $newMessage .= "_" . $end . "_";
+
+                        $requestToSend = (object) [
+                            'messages' => [
+                                (object) ['from' => $number]
+                            ]
+                        ];
+                        $externalClient = new D360APIClient($config360, $requestToSend); // Instance 360 client
+                        $externalClient->sendTextMessage($newMessage);
+                    }
+                }
+            }
+        }
+        die;
     }
 }

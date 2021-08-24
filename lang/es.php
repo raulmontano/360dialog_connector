@@ -30,5 +30,7 @@ return array(
     'date_format' => 'formato de fecha: mm/dd/YYYY',
     'click_to_choose' => 'Clic para elegir',
     'choose_an_option' => 'Elige una opción',
-    'no_results' => 'Lo siento, no tengo una respuesta para esta pregunta.'
+    'no_results' => 'Lo siento, no tengo una respuesta para esta pregunta.',
+    'ask_for_survey' => '¿Quieres comenzar con la encuesta?',
+    'ask_to_continue_survey' => '¿Quieres continuar con la encuesta?'
 );

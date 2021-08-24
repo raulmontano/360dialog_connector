@@ -71,7 +71,9 @@ class D360Digester extends DigesterInterface
             if ($this->session->has('options')) {
                 $output = $this->checkOptions($message);
             }
-            if (count($output) == 0 && (isset($message->interactive->button_reply) || isset($message->interactive->list_reply))) {
+            if (count($output) == 0 && (isset($message->button->text))) {
+                $output[0] = ['message' => $message->button->text]; //From Templates messages
+            } else if (count($output) == 0 && (isset($message->interactive->button_reply) || isset($message->interactive->list_reply))) {
                 $reply = isset($message->interactive->button_reply) ? $message->interactive->button_reply : $message->interactive->list_reply;
                 if (isset($reply->id)) {
                     if (is_numeric($reply->id)) {
@@ -85,8 +87,10 @@ class D360Digester extends DigesterInterface
             } else if (count($output) == 0 && isset($message->text)) {
                 $output[0] = ['message' => $message->text->body];
             }
-            if (isset($message->image) || isset($message->document) || isset($message->video)
-                || isset($message->audio) || isset($message->voice)) {
+            if (
+                isset($message->image) || isset($message->document) || isset($message->video)
+                || isset($message->audio) || isset($message->voice)
+            ) {
                 $output = $this->mediaFileToHyperchat($message);
             }
         }
@@ -110,9 +114,13 @@ class D360Digester extends DigesterInterface
 
         if (isset($message->interactive->button_reply) || isset($message->interactive->list_reply)) {
             $reply = isset($message->interactive->button_reply) ? $message->interactive->button_reply : $message->interactive->list_reply;
-            if (isset($reply->id) && (strpos($reply->id, 'list_values_') !== false || strpos($reply->id, 'escalation_') !== false)) {
-                $message->text->body = str_replace('list_values_', '', $reply->id);
-                $message->text->body = str_replace('escalation_', '', $message->text->body);
+            if (isset($reply->id)) {
+                if (strpos($reply->id, 'list_values_') !== false || strpos($reply->id, 'escalation_') !== false) {
+                    $message->text->body = str_replace('list_values_', '', $reply->id);
+                    $message->text->body = str_replace('escalation_', '', $message->text->body);
+                } else if (isset($reply->title) && isset($options[0]->is_polar)) {
+                    $message->text->body = $reply->title;
+                }
             }
         }
 
@@ -610,6 +618,7 @@ class D360Digester extends DigesterInterface
      */
     public function formatFinalMessage($message)
     {
+        $message = html_entity_decode($message, ENT_COMPAT, "UTF-8");
         $message = str_replace('&nbsp;', ' ', $message);
         $message = str_replace(["\t"], '', $message);
 
@@ -929,5 +938,224 @@ class D360Digester extends DigesterInterface
                 ]
             ]
         ];
+    }
+
+    /**
+     * Show the message to ask to start the survey
+     */
+    public function askForSurvey()
+    {
+        $output = [];
+        $surveyElements = $this->session->get('surveyElements');
+        if (!is_null($surveyElements)) {
+            $this->session->set('surveyAskForAcceptance', true);
+            $this->session->set('surveyLaunch', true);
+            $this->session->delete('surveyConfirm');
+            $message = $this->langManager->translate('ask_for_survey');
+            $buttons = [];
+            $options = ['yes', 'no'];
+            foreach ($options as $option) {
+                $buttons[] = [
+                    'type' => 'reply',
+                    'reply' => [
+                        'id' => $this->langManager->translate($option),
+                        'title' => $this->langManager->translate($option)
+                    ]
+                ];
+            }
+            $output[] = $this->makeButtons($message, $buttons);
+        }
+        return $output;
+    }
+
+    /**
+     * Process the survey data
+     */
+    public function nextSurveyQuestion($surveyElements, $message)
+    {
+        $response = $this->validateSurveyAnswer($surveyElements, $message);
+        if (count($response) > 0) {
+            return $response;
+        }
+        $surveyElements = $this->session->get('surveyElements');
+
+        $previousPage = 0;
+        $countResponse = -1;
+        $isExpectingValue = false;
+        foreach ($surveyElements['questions'] as $index => $question) {
+            if (!$question['answered']) {
+                if ($previousPage != $question['page'] && $previousPage > 0) {
+                    break;
+                }
+                $countResponse++;
+                if ($question['type'] === 'layout') {
+                    $surveyElements['questions'][$index]['answered'] = true;
+                } else {
+                    $this->session->set('surveyExpectedValues', '');
+                    $expectedValues = [];
+                    $labels = [];
+                    $min = null;
+                    $max = null;
+                    $countSettings = 0;
+                    foreach ($question['settings'] as $setting) {
+                        if ($countSettings == 0) {
+                            $response[$countResponse] = $setting->value;
+                        } else {
+                            if (is_array($setting->value)) {
+                                foreach ($setting->value as $value) {
+                                    $expectedValues[] = $value->value;
+                                    $labels[] = $value->label;
+                                }
+                            } else if (is_object($setting->value) && ($setting->subtype === 'min' || $setting->subtype === 'max')) {
+                                if ($setting->subtype === 'min') {
+                                    $min = $setting->value->value;
+                                } else if ($setting->subtype === 'max') {
+                                    $max = $setting->value->value;
+                                }
+                            }
+                        }
+                        $countSettings++;
+                    }
+                    if (is_int($min) && is_int($max) && $max > $min) {
+                        for ($i = $min; $i <= $max; $i++) {
+                            $expectedValues[] = $i;
+                            $labels[] = $i;
+                        }
+                    }
+                    if (count($expectedValues) > 0) {
+                        $response[$countResponse] .= "\n \n";
+                        foreach ($labels as $labelCount => $label) {
+                            $response[$countResponse] .= "\n" . ($labelCount + 1) . " - " . $label;
+                        }
+                        $this->session->set('surveyExpectedLabels', $labels);
+                        $this->session->set('surveyExpectedValues', $expectedValues);
+                        $isExpectingValue = true;
+                    } else if ($question['type'] === 'input' && ($question['subtype'] === 'text' || $question['subtype'] === 'textarea')) { //Expecting a simple text response
+                        $isExpectingValue = true;
+                    }
+                    $this->session->set('surveyPendingElement', $index);
+                    $countResponse++;
+                    break;
+                }
+                $previousPage = $question['page'];
+            }
+        }
+        $this->session->set('surveyElements', $surveyElements);
+
+        $pendingAnswers = false;
+        foreach ($surveyElements['questions'] as $index => $question) {
+            if (!$question['answered']) {
+                $pendingAnswers = true;
+                break;
+            }
+        }
+        if (!$isExpectingValue) $pendingAnswers = false;
+
+        if (!$pendingAnswers) {
+            $response[] = '__MAKE_SUBMIT__';
+        }
+        return $response;
+    }
+
+    /**
+     * Validate if the answer for survey is correct
+     */
+    protected function validateSurveyAnswer($surveyElements, $message)
+    {
+        $response = [];
+        $isSurveyAnswer = true;
+        if ($this->session->get('surveyAskForAcceptance', false)) {
+            $isSurveyAnswer = false;
+            $this->session->delete('surveyAskForAcceptance');
+            $this->session->set('surveyWrongAnswers', 0);
+            if (Helper::removeAccentsToLower($this->langManager->translate('yes')) !== Helper::removeAccentsToLower($message)) {
+                $this->session->delete('launchSurvey');
+                $this->session->delete('surveyElements');
+                $response[] = $this->langManager->translate('thanks');
+                $response[] = '__SURVEY_NOT_ACCEPTED__';
+            }
+        } else if ($this->session->get('surveyAskForContinue', false)) {
+            $isSurveyAnswer = false;
+            $this->session->delete('surveyAskForContinue');
+            $this->session->set('surveyWrongAnswers', 0);
+            if (Helper::removeAccentsToLower($this->langManager->translate('yes')) !== Helper::removeAccentsToLower($message)) {
+                $response[] = $this->langManager->translate('thanks');
+                $response[] = '__END_SURVEY__';
+            }
+        }
+        if ($isSurveyAnswer) {
+            $pendingElement = $this->session->get('surveyPendingElement', -1);
+            if ($pendingElement >= 0) {
+                $surveyExpectedValues = $this->session->get('surveyExpectedValues', '');
+                $surveyExpectedLabels = $this->session->get('surveyExpectedLabels', '');
+                $correctAnswer = true;
+                if (is_array($surveyExpectedValues) && is_array($surveyExpectedLabels)) {
+                    $selected = false;
+                    foreach ($surveyExpectedLabels as $index => $expected) {
+                        if ($message == ($index + 1) || Helper::removeAccentsToLower($message) === Helper::removeAccentsToLower($expected)) {
+                            $selected = true;
+                            $message = $surveyExpectedValues[$index];
+                            break;
+                        }
+                    }
+                    if (!$selected) {
+                        $this->session->set('surveyWrongAnswers', $this->session->get('surveyWrongAnswers', 0) + 1);
+                        $correctAnswer = false;
+                    }
+                }
+                if ($correctAnswer) {
+                    $surveyElements['questions'][$pendingElement]['answered'] = true;
+                    $surveyElements['questions'][$pendingElement]['response'] = $message;
+                    $surveyElements = $this->reviewSurveyPageNavigation($surveyElements, $message);
+                    $this->session->set('surveyElements', $surveyElements);
+                    $this->session->set('surveyWrongAnswers', 0);
+                }
+            }
+            if ($this->session->get('surveyWrongAnswers', 0) > 1) {
+                $textConfirmation = $this->langManager->translate('ask_to_continue_survey');
+                $buttons = [];
+                $options = ['yes', 'no'];
+                foreach ($options as $index => $option) {
+                    $buttons[] = [
+                        'type' => 'reply',
+                        'reply' => [
+                            'id' => $this->langManager->translate($option),
+                            'title' => $this->langManager->translate($option)
+                        ]
+                    ];
+                }
+                $response[] = $this->makeButtons($textConfirmation, $buttons);
+                $this->session->set('surveyAskForContinue', true);
+            }
+        }
+        return $response;
+    }
+
+    /**
+     * Check if there is a page navigation
+     */
+    protected function reviewSurveyPageNavigation($surveyElements, $message)
+    {
+        if (count($surveyElements['navigatePage']) > 0) {
+            $pageSelected = '';
+            foreach ($surveyElements['navigatePage'] as $page) {
+                if ($page->value === $message) {
+                    $pageSelected = $page->page;
+                    break;
+                }
+            }
+            if ($pageSelected !== '') {
+                foreach ($surveyElements['questions'] as $index => $question) {
+                    $markAsAnswered = true;
+                    if ($question['page'] == $pageSelected) {
+                        $markAsAnswered = false;
+                    }
+                    if ($markAsAnswered) {
+                        $surveyElements['questions'][$index]['answered'] = true;
+                    }
+                }
+            }
+        }
+        return $surveyElements;
     }
 }

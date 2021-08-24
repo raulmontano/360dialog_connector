@@ -7,5 +7,11 @@
 // Inbenta API configuration
 return [
     'key' => '',
-    'secret' => ''
+    'secret' => '',
+
+    'messenger' => [
+        'key' => '',
+        'secret' => '',
+        'webhook_secret' => ''
+    ]
 ];

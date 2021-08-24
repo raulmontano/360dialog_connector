@@ -4,20 +4,21 @@ namespace Inbenta\D360Connector\HyperChatAPI;
 
 use Inbenta\ChatbotConnector\HyperChatAPI\HyperChatClient;
 use Inbenta\D360Connector\ExternalAPI\D360APIClient;
-use Inbenta\D360Connector\MessengerAPI\MessengerAPI;
 
 class D360HyperChatClient extends HyperChatClient
 {
     private $eventHandlers = array();
-    private $session;
     private $appConf;
     private $externalId;
+    protected $session;
+    protected $messengerClient;
 
-    function __construct($config, $lang, $session, $appConf, $externalClient)
+    function __construct($config, $lang, $session, $appConf, $externalClient, $messengerClient = null)
     {
         // CUSTOM added session attribute to clear it
         $this->session = $session;
         $this->appConf = $appConf;
+        $this->messengerClient = $messengerClient;
         parent::__construct($config, $lang, $session, $appConf, $externalClient);
     }
 
@@ -122,6 +123,10 @@ class D360HyperChatClient extends HyperChatClient
 
                     if (($user && !empty($user->providerId)) || $isSystem) {
                         $targetUser = $this->getUserInfo($chat->creator);
+
+                        //On close, save customer phone number, with the given email
+                        $this->updatesUserPhone($targetUser);
+
                         // notify chat close
                         $attended = true;
                         $this->extService->notifyChatClose(
@@ -131,10 +136,10 @@ class D360HyperChatClient extends HyperChatClient
                             $attended,
                             !$isSystem ? $user : null
                         );
-                        //On close, save customer phone number, with the given email
-                        $messengerAPI = new MessengerAPI($this->appConf, null, $this->session);
-                        $escalationFormData = $this->session->get('escalationForm', false);
-                        $messengerAPI->saveUserPhoneNumber($escalationFormData, $this->externalId);
+
+                        if (isset($chat->id)) {
+                            $this->hasSurvey($chat->id);
+                        }
                     }
 
                     break;
@@ -194,6 +199,10 @@ class D360HyperChatClient extends HyperChatClient
                     $attended = false;
                     $this->extService->notifyChatClose($chat, $targetUser, $system, $attended);
 
+                    if (isset($chat->id)) {
+                        $this->hasSurvey($chat->id);
+                    }
+
                     break;
                 case 'system:info': // CUSTOM case
                     $this->attachSurveyToTicket($event);
@@ -204,7 +213,10 @@ class D360HyperChatClient extends HyperChatClient
                     if (!$chat || $chat->source !== $this->config->get('source')) {
                         return;
                     }
-                    $user = $this->getUserInfo($eventData['userId']);
+                    $user = null;
+                    if (isset($eventData['userId'])) {
+                        $user = $this->getUserInfo($eventData['userId']);
+                    }
                     $data = $eventData['data'];
                     $this->extService->notifyQueueUpdate($chat, $user, $data);
             }
@@ -231,80 +243,6 @@ class D360HyperChatClient extends HyperChatClient
     }
 
     /**
-     * Overwritten method to add email and extra info data
-     * Signup a new user or update his/her data if it already exists.
-     * @param  array    $userData
-     * @return object
-     */
-    protected function signupOrUpdateUser($userData)
-    {
-        $user = null;
-
-        $requestBody = array(
-            'name' => $userData['name'],
-        );
-
-        if (!empty($userData['externalId'])) {
-            $requestBody['externalId'] = $userData['externalId'];
-        }
-        if (!empty($userData['extraInfo'])) {
-            $requestBody['extraInfo'] = (object) $userData['extraInfo'];
-        }
-        /*********** CUSTOM ***********/
-        if (!empty($userData['contact'])) {
-            $requestBody['contact'] = $userData['contact'];
-        }
-        /*********** CUSTOM ***********/
-        $response = $this->api->users->signup($requestBody);
-        // if a user with the same externalId already existed, just update its data
-        if (isset($response->error)) {
-            if ($response->error->code === self::USER_ALREADY_EXISTS) {
-                $user = $this->getUserByExternalId($requestBody['externalId']);
-                /*********** CUSTOM ***********/
-                $result = $this->updateUser($user->id, $requestBody);
-                /*********** CUSTOM ***********/
-                $user = $result ? $result : $user;
-            } else {
-                return false;
-            }
-        } else {
-            $user = $response->user;
-        }
-
-        return $user;
-    }
-
-    /**
-     * Overwritten function to update all user data
-     * Update a user's data
-     * @param  string $userId
-     * @param  array  $data   Data to update
-     * @return object         User's new data
-     */
-    protected function updateUser($userId, $data = null)
-    {
-        $payload = ['secret' => $this->config->get('secret')];
-        $requestTrigger = false;
-        if (isset($data['extraInfo'])) {
-            $payload['extraInfo'] = $data['extraInfo'];
-            $requestTrigger = true;
-        }
-        if (isset($data['name'])) {
-            $payload['name'] = $data['name'];
-            $requestTrigger = true;
-        }
-        if (isset($data['contact'])) {
-            $payload['contact'] = $data['contact'];
-            $requestTrigger = true;
-        }
-        if (!$requestTrigger) {
-            return false;
-        }
-        $response = $this->api->users->update($userId, $payload);
-        return (isset($response->user)) ? $response->user : false;
-    }
-
-    /**
      * Attach a survey to the ticket
      *
      * @param array $event HyperChat system:info event
@@ -314,7 +252,8 @@ class D360HyperChatClient extends HyperChatClient
     protected function attachSurveyToTicket($event)
     {
         $ticketId = $event['data']['data']['ticketId'];
-        $surveyId = $this->config->get('surveyId');
+        $surveyConfig = $this->config->get('survey');
+        $surveyId = $surveyConfig['id'];
 
         // Only send the survey if it's properly configured
         if ($surveyId !== '' && $surveyId !== null) {
@@ -333,5 +272,31 @@ class D360HyperChatClient extends HyperChatClient
         }
         // Clear chatbot session when chat is closed
         $this->session->clear();
+    }
+
+    /**
+     * Updates Messenger user phone number
+     */
+    protected function updatesUserPhone($targetUser)
+    {
+        if (
+            !is_null($this->messengerClient) && $this->externalId !== '' &&
+            isset($targetUser->contact) && trim($targetUser->contact) !== '' 
+        ) {
+            $email = $targetUser->contact;
+            $userData = $this->messengerClient->getUserByParam('address', $email);
+            if (isset($userData->data) && isset($userData->data[0]->id)) {
+                $idUser = $userData->data[0]->id;
+                $dataSave = [
+                    "extra" => [
+                        [
+                            "id" => 2,
+                            "content" => $this->externalId
+                        ]
+                    ]
+                ];
+                $this->messengerClient->updatesUserInfo($idUser, $dataSave);
+            }
+        }
     }
 }
