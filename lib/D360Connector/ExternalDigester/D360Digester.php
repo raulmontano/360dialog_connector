@@ -115,6 +115,9 @@ class D360Digester extends DigesterInterface
         if (isset($message->interactive->button_reply) || isset($message->interactive->list_reply)) {
             $reply = isset($message->interactive->button_reply) ? $message->interactive->button_reply : $message->interactive->list_reply;
             if (isset($reply->id)) {
+                if (!isset($message->text)) {
+                    $message->text = (object) [];
+                }
                 if (strpos($reply->id, 'list_values_') !== false || strpos($reply->id, 'escalation_') !== false) {
                     $message->text->body = str_replace('list_values_', '', $reply->id);
                     $message->text->body = str_replace('escalation_', '', $message->text->body);
@@ -339,6 +342,7 @@ class D360Digester extends DigesterInterface
                 $option->title = $option->attributes->title;
             } else if ($isPolar) {
                 $option->is_polar = true;
+                $option->value = Helper::removeAccentsToLower($this->langManager->translate($option->value));
             }
 
             if ($this->conf['active_buttons'] || $isPolar) {

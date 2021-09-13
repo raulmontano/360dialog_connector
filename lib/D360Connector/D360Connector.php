@@ -328,16 +328,16 @@ class D360Connector extends ChatbotConnector
      */
     private function validatePreviousMessages($request)
     {
-        if (isset($request->messages) && isset($request->messages[0]) && isset($request->messages[0]->id)) {
-
+        if (isset($request->messages[0]->id) || isset($request->events[0]->id)) {
+            $idCurrentMessage = isset($request->messages[0]->id) ? $request->messages[0]->id : $request->events[0]->id;
             $lastMessagesId = $this->session->get('lastMessagesId', false);
             if (!is_array($lastMessagesId)) {
                 $lastMessagesId = [];
             }
-            if (in_array($request->messages[0]->id, $lastMessagesId)) {
+            if (in_array($idCurrentMessage, $lastMessagesId)) {
                 die;
             }
-            $lastMessagesId[time()] = $request->messages[0]->id;
+            $lastMessagesId[time()] = $idCurrentMessage;
 
             foreach ($lastMessagesId as $key => $messageSent) {
                 if ((time() - 240) > $key) {

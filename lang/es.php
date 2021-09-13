@@ -5,7 +5,7 @@ return array(
     'api_timeout' => 'Por favor, reformula tu pregunta.',
     'ask_rating_comment' => 'Por favor dinos porqué',
     'ask_to_escalate' => '¿Quieres iniciar un chat con un agente?',
-    'chat_closed' => 'Chat cerrado. Por favor, responda la siguiente encuesta:',
+    'chat_closed' => '_Chat cerrado_',
     'creating_chat' => 'Voy a intentar conectarle con un agente. Espere por favor.',
     'error_creating_chat' => 'Ha habido un error al intentar conectar con el chat.',
     'escalation_rejected' => 'Estaré aquí esperando tus preguntas.',

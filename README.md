@@ -150,15 +150,21 @@ Some of the optional features that can be enabled from the configuration files t
     * **regionServer:** The geographical region where the HyperChat app lives.
     * **server:** The Hyperchat server URL assigned to your instance. Ask your Inbenta contact for this configuration parameter.
     * **server_port:** The port where to communicate with the Hyperchat server. It’s defined in your instance → Messenger → Settings → Chat -->Port
-    * **queue:**
-        * **active:** Enable or disable the queue system (“**true**” or “**false**”). It **MUST** be enabled in your instance too (Messenger → Settings → Chat → Queue mode).
+    * **survey**:
+        * **id**: Id of the Messenger survey.
+        * **active**: Enable or disable the survey (“**true**” or “**false**”). Launched when agent conversation ends.
+        * **confirmToStart**: "**true**" to launch a message to confirm if the survey should start (or not). "**false**" to avoid the confirmation message.
 * **triesBeforeEscalation:** Number of no-result answers in a row after the bot should escalate to an agent (if available). Numeric value, not a string. Zero means it’s disabled.
 * **negativeRatingsBeforeEscalation:** Number of negative content ratings in a row after the bot should escalate to an agent (if available). Numeric value, not a string. Zero means it’s disabled.
-* **messenger:** Setting that allow replying to tickets after the agent conversation is closed.
-    * **auht_url:** Url for authorization, used by API Messenger.
+
+**MESSENGER (api.php)**
+
+In the same file of the Chatbot credentials (**api.php**), as optional values, you have **Messenger API** credentials (**key** and **secret**). This connection will allow to display Messenger Surveys (if properly configured) and the ability to get responses from closed tickets.
+
+* **messenger:**
     * **key:** API Key of the Messenger Instance. You can find it in Administration → API → [Production | Development].
     * **secret:** Secret Key token of the Messenger Instance. You can find it in Administration → API → [Production | Development].
-    * **webhook_secret:** Secret token, defined when the configuration of [External Ticket Source](https://help.inbenta.com/en/configuring-an-external-tickets-source/) is made.
+    * **webhook_secret:** Secret token, defined when the configuration of [External Ticket Source](https://help.inbenta.com/en/configuring-an-external-tickets-source/) is made. The intent of this value is to get messages from agent, after the ticket is closed.
 
 **CONVERSATION (conversation.php)**
 

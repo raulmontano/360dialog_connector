@@ -5,7 +5,7 @@ return array(
     'api_timeout' => 'Merci de reformuler votre question.',
     'ask_rating_comment' => 'Désolé, pouvez-vous me préciser comment améliorer ma réponse ?',
     'ask_to_escalate' => 'Souhaitez-vous débuter un chat avec un agent humain ?',
-    'chat_closed' => 'Chat fermé',
+    'chat_closed' => '_Chat fermé_',
     'creating_chat' => 'Je vais essayer de vous mettre en relation avec un agent, merci de patienter.',
     'error_creating_chat' => 'Une erreur est survenue en rejoignant le chat',
     'escalation_rejected' => 'Que puis-je faire d\'autre pour vous ?',

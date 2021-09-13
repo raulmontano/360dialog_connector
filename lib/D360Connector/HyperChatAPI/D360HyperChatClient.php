@@ -279,24 +279,24 @@ class D360HyperChatClient extends HyperChatClient
      */
     protected function updatesUserPhone($targetUser)
     {
-        if (
-            !is_null($this->messengerClient) && $this->externalId !== '' &&
-            isset($targetUser->contact) && trim($targetUser->contact) !== '' 
-        ) {
-            $email = $targetUser->contact;
-            $userData = $this->messengerClient->getUserByParam('address', $email);
-            if (isset($userData->data) && isset($userData->data[0]->id)) {
-                $idUser = $userData->data[0]->id;
-                $dataSave = [
-                    "extra" => [
-                        [
-                            "id" => 2,
-                            "content" => $this->externalId
-                        ]
+        if (is_null($this->messengerClient)) return false;
+        if ($this->externalId === '') return false;
+        if (!isset($targetUser->contact)) return false;
+        if (trim($targetUser->contact) === '') return false;
+
+        $email = $targetUser->contact;
+        $userData = $this->messengerClient->getUserByParam('address', $email);
+        if (isset($userData->data) && isset($userData->data[0]->id)) {
+            $idUser = $userData->data[0]->id;
+            $dataSave = [
+                "extra" => [
+                    [
+                        "id" => 2,
+                        "content" => $this->externalId
                     ]
-                ];
-                $this->messengerClient->updatesUserInfo($idUser, $dataSave);
-            }
+                ]
+            ];
+            $this->messengerClient->updatesUserInfo($idUser, $dataSave);
         }
     }
 }

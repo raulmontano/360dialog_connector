@@ -189,6 +189,13 @@ class D360APIClient
      */
     public function getFullName()
     {
+        if (is_null($this->fullName) || $this->fullName === '') {
+            $request = file_get_contents('php://input');
+            $requestDecoded = json_decode($request);
+            if (isset($requestDecoded->contacts[0]->profile->name)) {
+                $this->fullName = $requestDecoded->contacts[0]->profile->name;
+            }
+        }
         return $this->fullName;
     }
 
@@ -300,7 +307,7 @@ class D360APIClient
      */
     public function getMediaFrom360(string $mediaId)
     {
-        $urlMedia = str_replace("/messages", "/media/".$mediaId, $this->url);
+        $urlMedia = str_replace("/messages", "/media/" . $mediaId, $this->url);
         $headers = [
             'D360-Api-Key' => $this->apiKey
         ];
@@ -320,7 +327,7 @@ class D360APIClient
                     ];
                 }
             }
-        } catch(Exception $e) {
+        } catch (Exception $e) {
             return "";
         }
         return "";
