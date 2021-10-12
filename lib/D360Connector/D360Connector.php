@@ -13,6 +13,7 @@ use Inbenta\D360Connector\Helpers\Helper;
 use Inbenta\ChatbotConnector\MessengerAPI\MessengerAPIClient;
 use Inbenta\D360Connector\SubscribeWebhook;
 
+use Inbenta\D360Connector\ContinuaChatbotAPIClient;
 
 class D360Connector extends ChatbotConnector
 {
@@ -41,7 +42,7 @@ class D360Connector extends ChatbotConnector
 
             $this->storeExternalId($externalId);
 
-            $this->botClient = new ChatbotAPIClient($this->conf->get('api.key'), $this->conf->get('api.secret'), $this->session, $conversationConf);
+            $this->botClient = new ContinuaChatbotAPIClient($this->conf->get('api.key'), $this->conf->get('api.secret'), $this->session, $conversationConf);
 
             if ($this->conf->get('api.messenger.key') !== '' && $this->conf->get('api.messenger.secret') !== '') {
                 $this->messengerClient = new MessengerAPIClient($this->conf->get('api.messenger.key'), $this->conf->get('api.messenger.secret'), $this->session);
@@ -313,6 +314,20 @@ class D360Connector extends ChatbotConnector
             // Send the messages received from ChatbotApi back to the external service
             $this->sendMessagesToExternal($botResponse);
         }
+
+        if($this->session->get('conversationStarted') === TRUE){
+    			$this->session->set('conversationStarted', FALSE);
+
+    			$showWelcomeMenu = $this->conf->get('custom.conversation_started_welcome');
+
+          if($showWelcomeMenu){
+            $startMessage = [ 'message' => $showWelcomeMenu];
+            $botResponse = $this->sendMessageToBot($startMessage);
+            $this->sendMessagesToExternal($botResponse);
+          }
+
+    		}
+
         if ($needEscalation || $hasFormData) {
             $this->handleEscalation();
         }
