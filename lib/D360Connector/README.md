@@ -10,7 +10,6 @@ This connector inherits the functionalities from the `ChatbotConnector` library.
 * Polar questions
 * Chained answers
 * Escalate to HyperChat after a number of no-results answers
-* Escalate to HyperChat when matching with an 'Escalation FAQ'
 * Send information to webhook through forms
 
 ### HOW TO CUSTOMIZE

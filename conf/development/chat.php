@@ -20,7 +20,7 @@ return [
             'active' => false,
             'confirmToStart' => true, //If 'false' survey will start without any confirmation
         ],
-        'workTimeTableActive' => true, // if set to FALSE then chat is 24/7, if TRUE then we get the working hours from API
+        'workTimeTableActive' => false, // if set to FALSE then chat is 24/7, if TRUE then we get the working hours from API
         'timetable' => [
             'monday'     => ['09:00-18:00'], //It can be this way: ['09:00-18:00', '20:00-23:00']
             'tuesday'    => ['09:00-18:00'],

@@ -14,7 +14,7 @@ return array(
     'queue_estimation_first' => 'Hay una persona delante de ti.',
     'queue_estimation' => 'Hay $queuePosition personas delante de ti.',
     'rate_content_intro' => '¿Te ha servido esta respuesta?',
-    'thanks' => 'Gracias!',
+    'thanks' => '¡Gracias!',
     'yes' => 'Sí',
     'close_chat_key_word' => '/cerrar',
     'out_of_time' => 'Fuera del horario de atención al cliente',

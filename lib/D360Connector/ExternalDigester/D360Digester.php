@@ -342,7 +342,7 @@ class D360Digester extends DigesterInterface
                 $option->title = $option->attributes->title;
             } else if ($isPolar) {
                 $option->is_polar = true;
-                $option->value = Helper::removeAccentsToLower($this->langManager->translate($option->value));
+                $option->value = $option->value;
             }
 
             if ($this->conf['active_buttons'] || $isPolar) {
