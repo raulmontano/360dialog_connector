@@ -3,6 +3,7 @@
 namespace Inbenta\D360Connector\ExternalAPI;
 
 use Inbenta\D360Connector\ExternalDigester\D360Digester;
+use Inbenta\D360Connector\Helpers\Helper;
 use GuzzleHttp\Client as Guzzle;
 use Exception;
 
@@ -15,6 +16,7 @@ class D360APIClient
     public $email;
     public $fullName;
     public $extraInfo;
+    protected $attachableFormats;
 
 
     /**
@@ -28,6 +30,7 @@ class D360APIClient
         $this->apiKey = $config['api_key'];
         $this->url = $config['url_messages'];
         $this->to = isset($request->messages[0]->from) ? $request->messages[0]->from : null; //From > To
+        $this->attachableFormats = Helper::$attachableFormats;
     }
 
 
@@ -42,12 +45,16 @@ class D360APIClient
             'D360-Api-Key' => $this->apiKey
         ];
 
-        $client = new Guzzle();
-        $response = $client->post($this->url, [
-            'body' => json_encode($payload),
-            'headers' => $headers
-        ]);
-        return $response;
+        try {
+            $client = new Guzzle();
+            $response = $client->post($this->url, [
+                'body' => json_encode($payload),
+                'headers' => $headers
+            ]);
+            return $response;
+        } catch (Exception $e) {
+            return false;
+        }
     }
 
 
@@ -69,13 +76,11 @@ class D360APIClient
 
     /**
      * Establishes the 360 sender (user) directly with the provided phone numbers
-     * @param string $companyPhoneNumber
      * @param string $userPhoneNumber
      * @return void
      */
-    public function setSenderFromId($userPhoneNumber) //$companyPhoneNumber, 
+    public function setSenderFromId($userPhoneNumber)
     {
-        //$this->from = $companyPhoneNumber;
         $this->to = $userPhoneNumber;
     }
 
@@ -132,8 +137,8 @@ class D360APIClient
         ];
 
         $response = $this->sendTo360($destinationInfo);
+        $this->insertTimeout($message);
 
-        usleep(400000); //Make a pause before the next message, sleeps 400 miliseconds
         return $response;
     }
 
@@ -156,6 +161,7 @@ class D360APIClient
             foreach ($subElements as $type => $element) {
                 if ($type === 'text') {
                     if (trim($element) !== '') {
+                        $element = str_replace('  ', ' ', $element);
                         $param = ["body" => trim($element)];
                         $messageSend = $this->send($param, $type);
                     }
@@ -266,15 +272,16 @@ class D360APIClient
      */
     public function sendTextMessage($text)
     {
-        $data = [
-            'text' => $text
-        ];
+        $data = [];
         if (strpos($text, "<") !== false) { //If text has a type of html tags
-            $digester = new D360Digester('', '', '', '');
-            $data = $digester->handleMessageWithImgOrIframe($text);
-            $digester->handleMessageWithLinks($text);
-            $digester->handleMessageWithTextFormat($text);
-            $data["text"] = $digester->formatFinalMessage($text);
+            $text = Helper::processHtml($text);
+            if (strpos($text, "<") !== false) { //If still text has a type of html tags
+                $digester = new D360Digester('', '', '', '');
+                $data = $digester->splitMessagesInElements($text);
+            }
+        }
+        if (count($data) == 0) {
+            $data = ['text' => $text];
         }
         $this->sendMessage($data);
     }
@@ -299,6 +306,33 @@ class D360APIClient
                 $this->sendMessage($media);
             }
         }
+    }
+
+    /**
+     * Validate the timeout before next message
+     * @param array $message
+     */
+    public function insertTimeout($message)
+    {
+        $timeout = 200000; //200 miliseconds
+        if (isset($message['link'])) {
+            $urlElements = explode(".", $message['link']);
+            if (count($urlElements) > 1) {
+                $fileFormat = $urlElements[count($urlElements) - 1];
+                foreach ($this->attachableFormats as $type => $formats) {
+                    if (in_array($fileFormat, $formats)) {
+                        $timeout = 650000; //650 miliseconds
+                        if ($type === 'video') {
+                            $timeout = 2000000; //2 seconds (2000 miliseconds)
+                        } else if ($type === 'image') {
+                            $timeout = 450000; //450 miliseconds
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        usleep($timeout); //Make a pause before the next message
     }
 
     /**

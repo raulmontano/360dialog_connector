@@ -34,7 +34,8 @@ return [
                 //'2021-06-15' => ['9:00-12:00'] // no matter which day of week is, that day agents only works from 9 to 12
             ]
         ],
-        'timezoneWorkingHours' => 'America/New_York'
+        'timezoneWorkingHours' => 'America/New_York',
+        'exitQueueCommand' => 'exit'
     ],
     'triesBeforeEscalation' => 2,
     'negativeRatingsBeforeEscalation' => 0

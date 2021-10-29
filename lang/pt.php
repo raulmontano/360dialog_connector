@@ -13,6 +13,8 @@ return array(
     'no_agents' => 'Ops! Estamos fora do nosso horário de atendimento. Os nossos atendentes estão disponíveis de segunda a sexta-feira, das 08:00 às 16:00 (exceto feriados). Aguardamos seu novo contato em nosso horário de atendimento!',
     'queue_estimation_first' => 'Existe uma pessoa na sua frente',
     'queue_estimation' => 'Existem $queuePosition pessoas na sua frente',
+    'on_waiting_queue' => 'Você está na fila de espera, por favor aguarde.',
+    'on_waiting_queue_exit' => 'Se você quiser sair da fila, digite: *$exitCommand*',
     'rate_content_intro' => 'Esta resposta lhe ajudou?',
     'thanks' => 'Obrigado!',
     'yes' => 'Sim',

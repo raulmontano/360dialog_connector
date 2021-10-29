@@ -13,6 +13,8 @@ return array(
     'no_agents' => 'No agents available',
     'queue_estimation_first' => 'There is one person ahead of you.',
     'queue_estimation' => 'There are $queuePosition people ahead of you.',
+    'on_waiting_queue' => 'You are on the waiting list, please wait.',
+    'on_waiting_queue_exit' => 'If you want to exit the queue then type: *$exitCommand*',
     'rate_content_intro' => 'Was this answer helpful?',
     'thanks' => 'Thanks!',
     'yes' => 'Yes',

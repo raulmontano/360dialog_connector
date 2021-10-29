@@ -162,6 +162,8 @@ class D360Connector extends ChatbotConnector
 
         // If there is a active chat, send messages to the agent
         if ($this->chatOnGoing()) {
+            $this->validateIsInHyperchatQueue($digestedRequest);
+
             if ($this->isCloseChatCommand($digestedRequest)) {
                 $chatData = [
                     'roomId' => $this->conf->get('chat.chat.roomId'),

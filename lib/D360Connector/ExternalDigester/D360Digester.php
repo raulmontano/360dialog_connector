@@ -13,13 +13,10 @@ class D360Digester extends DigesterInterface
     protected $langManager;
     protected $session;
     protected $externalClient;
-    protected $attachableFormats = [
-        'image' => ['jpg', 'jpeg', 'png', 'gif'],
-        'document' => ['pdf', 'xls', 'xlsx', 'doc', 'docx'],
-        'video' => ['mp4', 'avi'],
-        'audio' => ['mp3', 'mpeg', 'aac', 'wav', 'wma', 'ogg', 'm4a'],
-        'voice' => ['ogg']
-    ];
+    protected $attachableFormats;
+    protected $buttonsMaxLength = 20;
+    protected $buttonsListMaxLength = 24;
+    protected $buttonsMaxIdLength = 256;
 
     /**
      * Digester contructor
@@ -31,6 +28,7 @@ class D360Digester extends DigesterInterface
         $this->conf = $conf;
         $this->session = $session;
         $this->externalClient = $externalClient;
+        $this->attachableFormats = Helper::$attachableFormats;
     }
 
     /**
@@ -78,8 +76,8 @@ class D360Digester extends DigesterInterface
                 if (isset($reply->id)) {
                     if (is_numeric($reply->id)) {
                         $output[0] = ['option' => $reply->id];
-                    } else if (strpos($reply->id, '_d-c_') !== false) {
-                        $output[0] = ['directCall' => str_replace('_d-c_', '', $reply->id)];
+                    } else if (strpos($reply->id, '__dc') === 0 && strpos($reply->id, 'DC__') === 5) {
+                        $output[0] = ['directCall' => substr($reply->id, 9)];
                     } else {
                         $output[0] = ['message' => $reply->id];
                     }
@@ -114,6 +112,7 @@ class D360Digester extends DigesterInterface
 
         if (isset($message->interactive->button_reply) || isset($message->interactive->list_reply)) {
             $reply = isset($message->interactive->button_reply) ? $message->interactive->button_reply : $message->interactive->list_reply;
+            $options = is_array($options) ? $options : (array) $options;
             if (isset($reply->id)) {
                 if (!isset($message->text)) {
                     $message->text = (object) [];
@@ -129,12 +128,12 @@ class D360Digester extends DigesterInterface
 
         if (isset($message->text->body)) {
             $userMessage = $message->text->body;
-
             $selectedOption = false;
             $selectedOptionText = "";
             $selectedEscalation = "";
             $isRelatedContent = false;
             $isListValues = false;
+            $forceNumberedList = false;
             $isPolar = false;
             $isEscalation = false;
             $optionSelected = false;
@@ -147,9 +146,11 @@ class D360Digester extends DigesterInterface
                     $isPolar = true;
                 } else if (isset($option->escalate)) {
                     $isEscalation = true;
+                } else if (isset($option->forceNumberedList)) {
+                    $forceNumberedList = true;
                 }
                 if (
-                    ((!$this->conf['active_buttons'] || $isEscalation || $isListValues) && $userMessage == $option->opt_key) ||
+                    ((!$this->conf['active_buttons'] || $isEscalation || $isListValues || $forceNumberedList) && $userMessage == $option->opt_key) ||
                     Helper::removeAccentsToLower($userMessage) === Helper::removeAccentsToLower($this->langManager->translate($option->label))
                 ) {
                     if ($isListValues || $isRelatedContent || (isset($option->attributes) && isset($option->attributes->DYNAMIC_REDIRECT) && $option->attributes->DYNAMIC_REDIRECT == 'escalationStart')) {
@@ -298,26 +299,34 @@ class D360Digester extends DigesterInterface
 
     protected function digestFromApiAnswer($message, $lastUserQuestion)
     {
-        $messageTxt = $message->message;
-
-        if (isset($message->attributes->SIDEBUBBLE_TEXT) && !empty($message->attributes->SIDEBUBBLE_TEXT)) {
-            $messageTxt .= "\n" . $message->attributes->SIDEBUBBLE_TEXT;
+        $output = [];
+        if (isset($message->actionField) && !empty($message->actionField) && $message->actionField->fieldType !== 'default') {
+            $output = $this->handleMessageWithActionField($message, $lastUserQuestion);
         }
-
-        $outputTmp = $this->handleMessageWithImgOrIframe($messageTxt);
-        $actionFieldList = $this->handleMessageWithActionField($message, $messageTxt, $lastUserQuestion);
-        $this->handleMessageWithLinks($messageTxt);
-        $this->handleMessageWithTextFormat($messageTxt);
-
-        if (count($outputTmp) > 0) {
-            $output[] = $outputTmp;
+        if (count($output) === 0) {
+            if (!isset($message->messageList) && trim($message->message) !== "") {
+                $message->messageList = [$message->message];
+            } else if ((is_array($message->messageList) && count($message->messageList) == 0) || !is_array($message->messageList)) {
+                $message->messageList = [""];
+            }
+            if (isset($message->attributes->SIDEBUBBLE_TEXT) && trim($message->attributes->SIDEBUBBLE_TEXT) !== "") {
+                $countMessages = count($message->messageList);
+                $message->messageList[$countMessages] = $message->attributes->SIDEBUBBLE_TEXT;
+            }
+            $outputTmp = [];
+            foreach ($message->messageList as $index => $messageTxt) {
+                $messageTxt = Helper::processHtml($messageTxt);
+                $outputTmp[$index] = $this->splitMessagesInElements($messageTxt);
+                $outputTmp[$index] = $this->groupTextMessages($outputTmp[$index]);
+            }
+            if (count($outputTmp) > 0) {
+                foreach ($outputTmp as $element) {
+                    if (count($element) > 0) {
+                        $output = array_merge($output, $element);
+                    }
+                }
+            }
         }
-        if (count($actionFieldList) > 0) {
-            $output[] = $actionFieldList;
-        } else {
-            $output[]['text'] = $this->formatFinalMessage($messageTxt);
-        }
-
         $relatedContent = $this->handleMessageWithRelatedContent($message, $lastUserQuestion);
         if (count($relatedContent) > 0) {
             $output[] = $relatedContent;
@@ -326,15 +335,15 @@ class D360Digester extends DigesterInterface
         return $output;
     }
 
-
     protected function digestFromApiMultipleChoiceQuestion($message, $lastUserQuestion, $isPolar = false)
     {
-        $title = $this->formatFinalMessage($message->message);
+        $title = Helper::formatFinalMessage($message->message);
         $messageTmp = $title;
         $options = $message->options;
         $buttons = [];
         $rows = [];
         $isButton = ($isPolar || count($options) <= 3) ? true : false;
+        $hasUniqueTitles = $isPolar ? true : $this->hasUniqueTitles($options, $isButton, 'label');
 
         foreach ($options as $i => &$option) {
             $option->opt_key = $i + 1;
@@ -345,16 +354,19 @@ class D360Digester extends DigesterInterface
                 $option->value = $option->value;
             }
 
-            if ($this->conf['active_buttons'] || $isPolar) {
+            if (($this->conf['active_buttons'] || $isPolar) && $hasUniqueTitles) {
                 if ($i == 10) break;
 
-                $id_button = (string) $option->value;
-                if (isset($option->attributes->DIRECT_CALL) && $option->attributes->DIRECT_CALL !== '') {
-                    $id_button = '_d-c_' . $option->attributes->DIRECT_CALL;
+                $idButton = (string) $option->value;
+                if (
+                    isset($option->attributes->DIRECT_CALL) && trim($option->attributes->DIRECT_CALL) !== ''
+                    && (strlen($option->attributes->DIRECT_CALL) + 9) <= $this->buttonsMaxIdLength
+                ) {
+                    $idButton = '__dc' . $i . 'DC__' . $option->attributes->DIRECT_CALL;
                 }
 
                 $rowButton = [
-                    "id" => $id_button,
+                    "id" => $idButton,
                     "title" => $option->label
                 ];
                 if ($isButton) {
@@ -367,9 +379,12 @@ class D360Digester extends DigesterInterface
                 }
             } else {
                 $messageTmp .= "\n" . $option->opt_key . ') ' . $option->label;
+                if (!$hasUniqueTitles && $this->conf['active_buttons']) {
+                    $option->forceNumberedList = true;
+                }
             }
         }
-        if ($this->conf['active_buttons'] || $isPolar) {
+        if (count($buttons) > 0 || count($rows) > 0) {
             if (count($buttons) > 0) {
                 $output = $this->makeButtons($title, $buttons);
             } else if (count($rows) > 0) {
@@ -380,11 +395,34 @@ class D360Digester extends DigesterInterface
         } else {
             $output = ["text" => $messageTmp];
         }
-
         $this->session->set('options', $options);
         $this->session->set('lastUserQuestion', $lastUserQuestion);
 
         return $output;
+    }
+
+    /**
+     * Validate if has unique titles
+     * if titles are repeated then it will show a numbered list instead of buttons
+     * @param array $options
+     * @param bool $isButton
+     * @param string $title
+     * @return bool
+     */
+    protected function hasUniqueTitles(array $options, bool $isButton, string $title)
+    {
+        if ($this->conf['active_buttons']) {
+            $titles = [];
+            $maxLength = $isButton ? $this->buttonsMaxLength : $this->buttonsListMaxLength;
+            foreach ($options as $option) {
+                $titleTmp = substr($option->$title, 0, $maxLength);
+                if (isset($titles[$titleTmp])) {
+                    return false;
+                }
+                $titles[$titleTmp] = true;
+            }
+        }
+        return true;
     }
 
     protected function digestFromApiPolarQuestion($message, $lastUserQuestion)
@@ -396,7 +434,7 @@ class D360Digester extends DigesterInterface
     protected function digestFromApiExtendedContentsAnswer($message, $lastUserQuestion)
     {
         $output = [
-            "text" => $this->formatFinalMessage("_" . $message->message . "_"),
+            "text" => Helper::formatFinalMessage("_" . $message->message . "_"),
         ];
 
         $messageTitle = [];
@@ -437,8 +475,7 @@ class D360Digester extends DigesterInterface
                 $this->session->set('federatedSubanswers', $message->subAnswers);
             }
         }
-        $output["text"] .=  $this->formatFinalMessage($messageTmp);
-
+        $output["text"] .= Helper::formatFinalMessage($messageTmp);
         return $output;
     }
 
@@ -452,7 +489,7 @@ class D360Digester extends DigesterInterface
     {
         $message = $this->langManager->translate('rate_content_intro');
         $buttons = [];
-        foreach ($ratingOptions as $index => $option) {
+        foreach ($ratingOptions as $option) {
             $buttons[] = [
                 "type" => "reply",
                 "reply" => [
@@ -465,58 +502,27 @@ class D360Digester extends DigesterInterface
         return $output;
     }
 
-
-    /**
-     * Validate if the message has images or iframes
-     */
-    public function handleMessageWithImgOrIframe(&$messageTxt)
-    {
-        $output = [];
-        if (strpos($messageTxt, '<img') !== false || strpos($messageTxt, '<iframe') !== false) {
-            if (strpos($messageTxt, '<img') !== false) {
-                $tmp = $this->handleMessageWithImages($messageTxt);
-                $output['image'] = [];
-                foreach ($tmp as $element) {
-                    $output['image'][] = [
-                        "link" => $element
-                    ];
-                }
-            }
-            if (strpos($messageTxt, '<iframe') !== false) {
-                $tmp = $this->handleMessageWithIframe($messageTxt);
-                foreach ($tmp as $type => $element) {
-                    if ($type === 'image') {
-                        foreach ($element as $image) {
-                            array_push($output[$type], $image);
-                        }
-                    } else {
-                        $output[$type] = $element;
-                    }
-                }
-            }
-        }
-        return $output;
-    }
-
     /**
      * Validate if the message has action fields
      */
-    private function handleMessageWithActionField($message, &$messageTxt, $lastUserQuestion)
+    private function handleMessageWithActionField($message, $lastUserQuestion)
     {
+        $output = [];
         if (isset($message->actionField) && !empty($message->actionField)) {
             if ($message->actionField->fieldType === 'list') {
-                $messageListValues = $this->handleMessageWithListValues($messageTxt, $message->actionField->listValues, $lastUserQuestion);
+                $messageListValues = $this->handleMessageWithListValues($message->message, $message->actionField->listValues, $lastUserQuestion);
                 if (is_array($messageListValues)) {
-                    return $messageListValues;
+                    $output[0] = $messageListValues;
                 } else {
-                    $messageTxt .= " (" . $this->langManager->translate('type_a_number') . ")";
-                    $messageTxt .= $messageListValues;
+                    $output[0] = [
+                        'text' => $message->message . " (" . $this->langManager->translate('type_a_number') . ")" . $messageListValues
+                    ];
                 }
             } else if ($message->actionField->fieldType === 'datePicker') {
-                $messageTxt .= " (" . $this->langManager->translate('date_format') . ")";
+                $output[0]['text'] = strip_tags($message->message . " (" . $this->langManager->translate('date_format') . ")");
             }
         }
-        return [];
+        return $output;
     }
 
     /**
@@ -529,13 +535,14 @@ class D360Digester extends DigesterInterface
             $options = [];
             $buttons = [];
             $optionList = "";
+            $hasUniqueTitles = $this->hasUniqueTitles($message->parameters->contents->related->relatedContents, true, 'title');
             foreach ($message->parameters->contents->related->relatedContents as $key => $relatedContent) {
                 $options[$key] = (object) [
                     'related_content' => true,
                     'label' => $relatedContent->title,
                     'opt_key' => $key + 1
                 ];
-                if ($this->conf['active_buttons']) {
+                if ($this->conf['active_buttons'] && $hasUniqueTitles) {
                     if ($key == 3) break;
                     $buttons[] = [
                         "type" => "reply",
@@ -546,11 +553,14 @@ class D360Digester extends DigesterInterface
                     ];
                 } else {
                     $optionList .= "\n\n" . ($key + 1) . ') ' . $relatedContent->title;
+                    if (!$hasUniqueTitles && $this->conf['active_buttons']) {
+                        $options[$key]->forceNumberedList = true;
+                    }
                 }
             }
             if (count($options) > 0) {
                 $title = $message->parameters->contents->related->relatedTitle;
-                if ($this->conf['active_buttons']) {
+                if (count($buttons) > 0) {
                     $output = $this->makeButtons($title, $buttons);
                 } else {
                     $output = ['text' => $title . $optionList];
@@ -564,90 +574,250 @@ class D360Digester extends DigesterInterface
     }
 
     /**
+     *  Replaced with handleMessageWithImagesNew()
      *	Splits a message that contains an <img> tag into text/image/text and displays them in 360
      */
     protected function handleMessageWithImages($message)
     {
-        //Remove \t \n \r and HTML tags (keeping <img> tags)
-        $text = str_replace(["\r\n", "\r", "\n", "\t"], '', strip_tags($message, "<img>"));
-        //Capture all IMG tags and return an array with [text,imageURL,text,...]
-        $parts = preg_split('/<\s*img.*?src\s*=\s*"(.+?)".*?\s*\/?>/', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
-        $images = [];
-        for ($i = 0; $i < count($parts); $i++) {
-            if (substr($parts[$i], 0, 4) == 'http') {
-                $images[] = $parts[$i];
-            }
-        }
-        return $images;
+        return [];
     }
 
     /**
-     * Extracts the url from the iframe
+     * Split the messages into Whatsapp readible messages
+     * @param string $messageTxt
+     * @param array $output = []
+     * @return array $output
      */
-    private function handleMessageWithIframe(&$messageTxt)
+    public function splitMessagesInElements(string $messageTxt, array $output = [])
     {
-        //Remove \t \n \r and HTML tags (keeping <iframe> tags)
-        $text = str_replace(["\r\n", "\r", "\n", "\t"], '', strip_tags($messageTxt, "<iframe>"));
-        //Capture all IFRAME tags and return an array with [text,imageURL,text,...]
-        $parts = preg_split('/<\s*iframe.*?src\s*=\s*"(.+?)".*?\s*\/?>/', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
-        $elements = [];
-        for ($i = 0; $i < count($parts); $i++) {
-            if (substr($parts[$i], 0, 4) == 'http') {
-                $urlElements = explode(".", $parts[$i]);
-                $fileFormat = $urlElements[count($urlElements) - 1];
+        if ($messageTxt !== "") {
+            $validTag = $this->findValidTag($messageTxt);
+            if (count($validTag) > 0) {
+                $output = $this->tagAnalyzer($validTag["position"], $validTag["closingTag"], $messageTxt, $output);
+            } else {
+                $output[] = [
+                    "text" => $messageTxt
+                ];
+            }
+        }
+        return $output;
+    }
 
-                $mediaElement = false;
-                foreach ($this->attachableFormats as $type => $formats) {
-                    if (in_array($fileFormat, $formats)) {
-                        $mediaElement = true;
-                        $elements[$type][] = [
-                            "link" => $parts[$i]
-                        ];
-                        break;
+    /**
+     * Find the first position of a valid tag to show it in a correct order
+     * @param string $messageTxt
+     * @return array
+     */
+    protected function findValidTag(string $messageTxt)
+    {
+        $aPos = strpos($messageTxt, '<a ') !== false ? strpos($messageTxt, '<a ') : -1;
+        $imgPos = strpos($messageTxt, '<img ') !== false ? strpos($messageTxt, '<img ') : -1;
+        $iframePos = strpos($messageTxt, '<iframe ') !== false ? strpos($messageTxt, '<iframe ') : -1;
+
+        $compare = [];
+        if ($aPos >= 0) {
+            $compare[] = $aPos;
+        }
+        if ($imgPos >= 0) {
+            $compare[] = $imgPos;
+        }
+        if ($iframePos >= 0) {
+            $compare[] = $iframePos;
+        }
+        if (count($compare) > 0) {
+            $firstApparition = min($compare);
+
+            if ($firstApparition == $aPos) {
+                return [
+                    "closingTag" => "</a>",
+                    "position" => $aPos
+                ];
+            } else if ($firstApparition == $imgPos) {
+                return [
+                    "closingTag" => ">",
+                    "position" => $imgPos
+                ];
+            } else if ($firstApparition == $iframePos) {
+                return [
+                    "closingTag" => "</iframe>",
+                    "position" => $iframePos
+                ];
+            }
+        }
+        return [];
+    }
+
+    /**
+     * Check the tag to validate if can extract any file
+     * @param int $position
+     * @param string $closingTag
+     * @param string $messageTxt
+     * @param array $output
+     * @return array $output
+     */
+    protected function tagAnalyzer(int $position, string $closingTag, string $messageTxt, array $output)
+    {
+        $tagLength = strlen($closingTag);
+        $messagePreTag = $position == 0 ? "" : substr($messageTxt, 0, $position);
+        $messageWithTag = substr($messageTxt, $position, (strpos($messageTxt, $closingTag) + $tagLength) - strlen($messagePreTag));
+        $messagePostTag = substr($messageTxt, strpos($messageTxt, $closingTag) + $tagLength);
+
+        if ($closingTag === '</a>') $messageProcessed = $this->handleMessageWithLinks($messageWithTag);
+        else if ($closingTag === '</iframe>') $messageProcessed = $this->handleMessageWithIframe($messageWithTag);
+        else $messageProcessed = $this->handleMessageWithImagesNew($messageWithTag);
+
+        if (!is_array($messageProcessed)) {
+            if ($messagePreTag !== "" && $messagePreTag !== "\n\n" && $messagePreTag !== "\n\n ") {
+                $messagePreTag .= " ";
+            }
+            $messageTmp = $messagePreTag === "" ? $messageProcessed : $messagePreTag . $messageProcessed;
+            $output[] = [
+                "text" => $messageTmp
+            ];
+        } else {
+            if ($messagePreTag !== "" && $messagePreTag !== "\n\n" && $messagePreTag !== "\n\n ") {
+                $output[] = [
+                    "text" => $messagePreTag
+                ];
+            }
+            $output[] = $messageProcessed;
+        }
+        if ($messagePostTag !== "" && $messagePostTag !== " " && $messagePostTag !== "\n\n" && $messagePostTag !== "\n\n ") {
+            $output = $this->splitMessagesInElements($messagePostTag, $output);
+        }
+        return $output;
+    }
+
+    /**
+     * Extract links from text in order to display as a Whatsapp valid format
+     * if link is a valid file then attach to Whatsapp
+     * @param string $messageWithLink
+     */
+    protected function handleMessageWithLinks(string $messageWithLink)
+    {
+        $response = $messageWithLink;
+        $dom = new \DOMDocument();
+        @$dom->loadHTML(mb_convert_encoding($messageWithLink, 'HTML-ENTITIES', 'UTF-8'));
+        @$xpath = new \DOMXpath($dom);
+        $elements = $xpath->query('//a | //img');
+
+        if (!is_null($elements)) {
+            $url = '';
+            $value = '';
+            $image = '';
+            foreach ($elements as $element) {
+                if ($element->nodeName === 'a') {
+                    $url = $element->getAttribute('href');
+                    $value = trim($element->nodeValue);
+                } else if ($element->nodeName === 'img') {
+                    $image = '<img src="' . $element->getAttribute('src') . '">';
+                }
+            }
+            if ($url !== '') {
+                if ($image !== '') {
+                    $response = $this->handleMessageWithImagesNew($image, $url);
+                } else {
+                    $response = $this->attachFileOrText($url, $value);
+                }
+            }
+        }
+        return $response;
+    }
+
+    /**
+     * Handle message with image
+     * @param string $messageWithImage
+     * @param string $caption = null
+     * @return array|string
+     */
+    protected function handleMessageWithImagesNew(string $messageWithImage, string $caption = null)
+    {
+        $dom = new \DOMDocument();
+        @$dom->loadHTML(mb_convert_encoding($messageWithImage, 'HTML-ENTITIES', 'UTF-8'));
+        $nodes = $dom->getElementsByTagName('img');
+        if (isset($nodes[0])) {
+            $url = $nodes[0]->getAttribute('src');
+            if ($url) {
+                return $this->attachFileOrText($url, $caption);
+            }
+        }
+        return $messageWithImage;
+    }
+
+    /**
+     * Handle the message from iFrame
+     * @param string $messageWithIframe
+     * @return array|string
+     */
+    protected function handleMessageWithIframe(string $messageWithIframe)
+    {
+        $dom = new \DOMDocument();
+        @$dom->loadHTML(mb_convert_encoding($messageWithIframe, 'HTML-ENTITIES', 'UTF-8'));
+        $nodes = $dom->getElementsByTagName('iframe');
+        if (isset($nodes[0])) {
+            $url = $nodes[0]->getAttribute('src');
+            if ($url) {
+                return $this->attachFileOrText($url);
+            }
+        }
+        return $messageWithIframe;
+    }
+
+    /**
+     * If there is an attachable file, includes it in the response
+     * @param string $url
+     * @param string $value = null
+     * @param bool $ignoreTextResponse = false
+     * @return array|string
+     */
+    protected function attachFileOrText(string $url, string $value = null)
+    {
+        $urlElements = explode(".", $url);
+        if (count($urlElements) > 1) {
+            $fileFormat = $urlElements[count($urlElements) - 1];
+            foreach ($this->attachableFormats as $type => $formats) {
+                if (in_array($fileFormat, $formats)) {
+                    $tmp = ["link" => $url];
+                    if (!is_null($value)) {
+                        $tmp["caption"] = $value;
                     }
-                }
-                if (!$mediaElement) {
-                    $pos1 = strpos($messageTxt, "<iframe");
-                    $pos2 = strpos($messageTxt, "</iframe>", $pos1);
-                    $iframe = substr($messageTxt, $pos1, $pos2 - $pos1 + 9);
-                    $messageTxt = str_replace($iframe, "<a href='" . $parts[$i] . "'></a>", $messageTxt);
+                    return [$type => [$tmp]];
                 }
             }
         }
-        return $elements;
+        return is_null($value) ? $url : $value . " (" . $url . ")";
     }
 
     /**
-     * Remove the common html tags from the message and set the final message
+     * Group text messages from array if they are adjacent
+     * @param array $output
+     * @return array $output
      */
-    public function formatFinalMessage($message)
+    protected function groupTextMessages(array $output)
     {
-        $message = html_entity_decode($message, ENT_COMPAT, "UTF-8");
-        $message = str_replace('&nbsp;', ' ', $message);
-        $message = str_replace(["\t"], '', $message);
-
-        $breaks = array("<br />", "<br>", "<br/>", "<p>");
-        $message = str_ireplace($breaks, "\n", $message);
-
-        $message = strip_tags($message);
-
-        $rows = explode("\n", $message);
-        $messageProcessed = "";
-        $previousJump = 0;
-        foreach ($rows as $row) {
-            if ($row == "" && $previousJump == 0) {
-                $previousJump++;
-            } else if ($row == "" && $previousJump == 1) {
-                $previousJump++;
-                $messageProcessed .= "\r\n";
+        $newOutput = [];
+        $countElements = 0;
+        $skipNextElement = false;
+        foreach ($output as $index => $element) {
+            if ($skipNextElement) {
+                $skipNextElement = false;
+                continue;
             }
-            if ($row !== "") {
-                $messageProcessed .= $row . "\r\n";
-                $previousJump = 0;
+            if (isset($element['text']) && isset($output[$index + 1]) && isset($output[$index + 1]['text'])) {
+                //If next element is text, insert next in current
+                $element['text'] = trim($element['text']) . ' ' . $output[$index + 1]['text'];
+                $newOutput[$countElements] = $element;
+                $skipNextElement = true;
+                $countElements++;
+            } else if (isset($element['text']) && !isset($output[$index + 1]) && isset($newOutput[$countElements - 1]['text'])) {
+                //Previous element is text and current is the last, insert in the previous
+                $newOutput[$countElements - 1]['text'] .= $element['text'];
+            } else {
+                $newOutput[$countElements] = $element;
+                $countElements++;
             }
         }
-        $messageProcessed = str_replace("  ", " ", $messageProcessed);
-        return $messageProcessed;
+        return $newOutput;
     }
 
     /**
@@ -660,16 +830,18 @@ class D360Digester extends DigesterInterface
         $buttons = [];
         $rows = [];
         $isButton = count($options) <= 3 ? true : false;
+        $hasUniqueTitles = $this->hasUniqueTitles($options, $isButton, 'option');
+
         foreach ($options as $i => &$option) {
             $option->opt_key = $i + 1;
             $option->list_values = true;
             $option->label = $option->option;
 
-            if ($this->conf['active_buttons']) {
+            if ($this->conf['active_buttons'] && $hasUniqueTitles) {
                 if ($i == 10) break;
                 $rowButton = [
                     "id" => "list_values_" . $option->opt_key,
-                    "title" => $option->option
+                    "title" => $option->label
                 ];
                 if ($isButton) {
                     $buttons[] = [
@@ -681,9 +853,12 @@ class D360Digester extends DigesterInterface
                 }
             } else {
                 $optionList .= "\n" . $option->opt_key . ') ' . $option->label;
+                if (!$hasUniqueTitles && $this->conf['active_buttons']) {
+                    $option->forceNumberedList = true;
+                }
             }
         }
-        if ($this->conf['active_buttons']) {
+        if (count($buttons) > 0 || count($rows) > 0) {
             $output = [];
             if (count($buttons) > 0) {
                 $output = $this->makeButtons($messageTxt, $buttons);
@@ -701,74 +876,6 @@ class D360Digester extends DigesterInterface
             $this->session->set('lastUserQuestion', $lastUserQuestion);
         }
         return $output;
-    }
-
-
-    /**
-     * Format the link as part of the message
-     */
-    public function handleMessageWithLinks(&$messageTxt)
-    {
-        if ($messageTxt !== "") {
-            $dom = new \DOMDocument();
-            @$dom->loadHTML(mb_convert_encoding($messageTxt, 'HTML-ENTITIES', 'UTF-8'));
-            $nodes = $dom->getElementsByTagName('a');
-            $urls = [];
-            $value = [];
-            foreach ($nodes as $node) {
-                $urls[] = $node->getAttribute('href');
-                $value[] = trim($node->nodeValue);
-            }
-            if (strpos($messageTxt, '<a ') !== false && count($urls) > 0) {
-                $countLinks = substr_count($messageTxt, "<a ");
-                $lastPosition = 0;
-                for ($i = 0; $i < $countLinks; $i++) {
-                    $firstPosition = strpos($messageTxt, "<a ", $lastPosition);
-                    $lastPosition = strpos($messageTxt, "</a>", $firstPosition);
-                    if (isset($urls[$i]) && $lastPosition > 0) {
-                        $aTag = substr($messageTxt, $firstPosition, $lastPosition - $firstPosition + 4);
-                        $textToReplace = $value[$i] !== "" ? $value[$i] . " (" . $urls[$i] . ")" : $urls[$i];
-                        $messageTxt = str_replace($aTag, $textToReplace, $messageTxt);
-                        $lastPosition = strpos($messageTxt, $textToReplace, $firstPosition);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Format the text if is bold, italic or strikethrough
-     */
-    public function handleMessageWithTextFormat(&$messageTxt)
-    {
-        $tagsAccepted = ['strong', 'b', 'em', 's'];
-        foreach ($tagsAccepted as $tag) {
-            if (strpos($messageTxt, '<' . $tag . '>') !== false) {
-
-                $replaceChar = "*"; //*bold*
-                if ($tag === "em") $replaceChar = "_"; //_italic_
-                else if ($tag === "s") $replaceChar = "~"; //~strikethrough~
-
-                $countTags = substr_count($messageTxt, "<" . $tag . ">");
-
-                $lastPosition = 0;
-                $tagArray = [];
-                for ($i = 0; $i < $countTags; $i++) {
-                    $firstPosition = strpos($messageTxt, "<" . $tag . ">", $lastPosition);
-                    $lastPosition = strpos($messageTxt, "</" . $tag . ">", $firstPosition);
-                    if ($lastPosition > 0) {
-                        $tagLength = strlen($tag) + 3;
-                        $tagArray[] = substr($messageTxt, $firstPosition, $lastPosition - $firstPosition + $tagLength);
-                    }
-                }
-                foreach ($tagArray as $oldTag) {
-                    $newTag = str_replace("<" . $tag . ">", "", $oldTag);
-                    $newTag = str_replace("</" . $tag . ">", "", $newTag);
-                    $newTag = $replaceChar . trim($newTag) . $replaceChar . " ";
-                    $messageTxt = str_replace($oldTag, $newTag, $messageTxt);
-                }
-            }
-        }
     }
 
     /**
@@ -893,9 +1000,9 @@ class D360Digester extends DigesterInterface
     protected function makeButtons(string $message, array $buttons)
     {
         foreach ($buttons as $index => $button) {
-            $button['reply']['title'] = trim($button['reply']['title']);
-            if (strlen($button['reply']['title']) > 20) {
-                $buttons[$index]['reply']['title'] = substr($button['reply']['title'], 0, 20);
+            $buttons[$index]['reply']['title'] = Helper::cleanButtonTitle($button['reply']['title']);
+            if (strlen($buttons[$index]['reply']['title']) > $this->buttonsMaxLength) {
+                $buttons[$index]['reply']['title'] = substr($buttons[$index]['reply']['title'], 0, $this->buttonsMaxLength - 3) . '...';
             }
         }
         return [
@@ -920,9 +1027,9 @@ class D360Digester extends DigesterInterface
     protected function makeButtonsList(string $message, string $buttonText, string $subtitle, array $buttons)
     {
         foreach ($buttons as $index => $button) {
-            $button['title'] = trim($button['title']);
-            if (strlen($button['title']) > 20) {
-                $buttons[$index]['title'] = substr($button['title'], 0, 20);
+            $buttons[$index]['title'] = Helper::cleanButtonTitle($button['title']);
+            if (strlen($buttons[$index]['title']) > ($this->buttonsListMaxLength)) {
+                $buttons[$index]['title'] = substr($buttons[$index]['title'], 0, $this->buttonsListMaxLength - 3) . '...';
             }
         }
         return [
