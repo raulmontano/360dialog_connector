@@ -10,8 +10,8 @@ class Helper
      */
     public static $attachableFormats = [
         'image' => ['jpg', 'jpeg', 'png', 'gif'],
-        'document' => ['pdf', 'xls', 'xlsx', 'doc', 'docx'],
-        'video' => ['mp4', 'avi'],
+        'document' => ['pdf', 'xls', 'xlsx', 'doc', 'docx', 'avi'],
+        'video' => ['mp4'],
         'audio' => ['mp3', 'mpeg', 'aac', 'wav', 'wma', 'ogg', 'm4a'],
         'voice' => ['ogg']
     ];
