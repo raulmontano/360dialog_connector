@@ -31,6 +31,12 @@ class D360APIClient
         $this->url = $config['url_messages'];
         $this->to = isset($request->messages[0]->from) ? $request->messages[0]->from : null; //From > To
         $this->attachableFormats = Helper::$attachableFormats;
+
+        $fullName = 'whatsapp.' . $this->to;
+
+        $this->setFullName($fullName);
+        $this->setEmail($fullName . '@continua.360dialog.com');
+
     }
 
 
