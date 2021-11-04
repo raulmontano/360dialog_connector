@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8ff233ffb07116157d4d82c9fc8e7439",
+    "content-hash": "1baa005b3be57d318afda995558ff141",
     "packages": [
         {
             "name": "guzzlehttp/guzzle",
@@ -207,16 +207,16 @@
         },
         {
             "name": "inbenta/chatbot-api-connector",
-            "version": "v1.3.17",
+            "version": "v1.3.18",
             "source": {
                 "type": "git",
                 "url": "https://github.com/inbenta-integrations/chatbot_api_connector.git",
-                "reference": "d492cc3471d9e234ccc8e1ffc9de42361349381c"
+                "reference": "32e66de929489fa5d60082e3512e885ecac105ee"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/inbenta-integrations/chatbot_api_connector/zipball/d492cc3471d9e234ccc8e1ffc9de42361349381c",
-                "reference": "d492cc3471d9e234ccc8e1ffc9de42361349381c",
+                "url": "https://api.github.com/repos/inbenta-integrations/chatbot_api_connector/zipball/32e66de929489fa5d60082e3512e885ecac105ee",
+                "reference": "32e66de929489fa5d60082e3512e885ecac105ee",
                 "shasum": ""
             },
             "require": {
@@ -232,10 +232,10 @@
                 }
             },
             "support": {
-                "source": "https://github.com/inbenta-integrations/chatbot_api_connector/tree/v1.3.17",
+                "source": "https://github.com/inbenta-integrations/chatbot_api_connector/tree/v1.3.18",
                 "issues": "https://github.com/inbenta-integrations/chatbot_api_connector/issues"
             },
-            "time": "2021-07-19T17:00:29+00:00"
+            "time": "2021-10-01T14:40:48+00:00"
         },
         {
             "name": "psr/http-message",
@@ -456,16 +456,16 @@
         },
         {
             "name": "symfony/polyfill-mbstring",
-            "version": "v1.23.0",
+            "version": "v1.23.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-mbstring.git",
-                "reference": "2df51500adbaebdc4c38dea4c89a2e131c45c8a1"
+                "reference": "9174a3d80210dca8daa7f31fec659150bbeabfc6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-mbstring/zipball/2df51500adbaebdc4c38dea4c89a2e131c45c8a1",
-                "reference": "2df51500adbaebdc4c38dea4c89a2e131c45c8a1",
+                "url": "https://api.github.com/repos/symfony/polyfill-mbstring/zipball/9174a3d80210dca8daa7f31fec659150bbeabfc6",
+                "reference": "9174a3d80210dca8daa7f31fec659150bbeabfc6",
                 "shasum": ""
             },
             "require": {
@@ -516,7 +516,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-mbstring/tree/v1.23.0"
+                "source": "https://github.com/symfony/polyfill-mbstring/tree/v1.23.1"
             },
             "funding": [
                 {
@@ -532,7 +532,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2021-05-27T09:27:20+00:00"
+            "time": "2021-05-27T12:26:48+00:00"
         },
         {
             "name": "symfony/polyfill-php70",

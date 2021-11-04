@@ -13,6 +13,8 @@ return array(
     'no_agents' => 'Nessun agente disponibile',
     'queue_estimation_first' => 'C\'è una persona davanti a te.',
     'queue_estimation' => 'Ci sono $queuePosition persone di fronte a te.',
+    'on_waiting_queue' => 'Sei in lista d\'attesa, attendere prego.',
+    'on_waiting_queue_exit' => 'Se vuoi uscire dalla coda, digita exit: *$exitCommand*',
     'rate_content_intro' => 'Questa risposta ti è stata d\'aiuto?',
     'thanks' => 'Grazie!',
     'yes' => 'Sì',

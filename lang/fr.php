@@ -13,6 +13,8 @@ return array(
     'no_agents' => 'Aucun agent disponible',
     'queue_estimation_first' => 'Il y a une personne devant toi.',
     'queue_estimation' => 'Il y a $queuePosition personnes devant toi',
+    'on_waiting_queue' => 'Vous êtes sur la liste d\'attente, veuillez patienter.',
+    'on_waiting_queue_exit' => 'Si vous voulez quitter la file d\'attente, tapez: *$exitCommand*',
     'rate_content_intro' => 'Cette réponse vous a-t-elle été utile ?',
     'thanks' => 'Merci.',
     'yes' => 'Oui',

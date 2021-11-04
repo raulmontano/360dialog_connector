@@ -4,11 +4,176 @@ namespace Inbenta\D360Connector\Helpers;
 
 class Helper
 {
+
+    /**
+     * Valid files formats
+     */
+    public static $attachableFormats = [
+        'image' => ['jpg', 'jpeg', 'png', 'gif'],
+        'document' => ['pdf', 'xls', 'xlsx', 'doc', 'docx'],
+        'video' => ['mp4', 'avi'],
+        'audio' => ['mp3', 'mpeg', 'aac', 'wav', 'wma', 'ogg', 'm4a'],
+        'voice' => ['ogg']
+    ];
+
+    /**
+     * Cleans and keeps the valid HTML tags on Telegram
+     * ("li", "ul", "ol", "p". "img", "p" and "iframe" are not valid tags but they are needed and parsed in the next methods)
+     * @param string $text
+     * @return string $content
+     */
+    public static function processHtml(string $text)
+    {
+        $text = html_entity_decode($text, ENT_COMPAT, "UTF-8");
+        $content = str_replace(["\r\n", "\r", "\n", "\t"], "", $text);
+        $content = strip_tags($content, "<br><b><strong><em><i><ins><del><strike><s><code><pre><a></a><li><ul><ol><p><img><iframe>");
+        $content = str_replace("&nbsp;", " ", $content);
+        //$content = str_replace("\u00a0", " ", $content);
+        $content = str_replace(chr(194) . chr(160), " ", $content);
+
+        $content = str_replace(["<br>", "<br/>", "<br />"], "\n\n", $content);
+        $content = str_replace(["<li>", "</li>"], ["\n-", ""], $content);
+        $content = str_replace(["<ul>", "<ol>"], "", $content);
+        $content = str_replace(["</ul>", "</ol>"], ["\n", "\n"], $content);
+        $content = str_replace("<p>", "\n\n", $content);
+        $content = str_replace("</p>", "", $content);
+
+        $content = self::acceptedTagText($content);
+
+        return $content;
+    }
+
+    /**
+     * Format the text if is bold, italic or strikethrough
+     * @param string $messageTxt
+     * @return string $messageTxt
+     */
+    public static function acceptedTagText(string $messageTxt)
+    {
+        $tagsAccepted = ['strong', 'b', 'em', 'i', 's', 'strike'];
+        $hasTags = false;
+        foreach ($tagsAccepted as $tag) {
+            if (strpos($messageTxt, '<' . $tag . '>') !== false) {
+
+                $replaceChar = "*"; //*bold*
+                if ($tag === "em" || $tag === "i") $replaceChar = "_"; //_italic_
+                else if ($tag === "s" || $tag === "strike") $replaceChar = "~"; //~strikethrough~
+
+                $countTags = substr_count($messageTxt, "<" . $tag . ">");
+
+                $lastPosition = 0;
+                $tagArray = [];
+                for ($i = 0; $i < $countTags; $i++) {
+                    $firstPosition = strpos($messageTxt, "<" . $tag . ">", $lastPosition);
+                    $lastPosition = strpos($messageTxt, "</" . $tag . ">", $firstPosition);
+                    if ($lastPosition > 0) {
+                        $tagLength = strlen($tag) + 3;
+                        $tagArray[] = substr($messageTxt, $firstPosition, $lastPosition - $firstPosition + $tagLength);
+                    }
+                }
+                foreach ($tagArray as $oldTag) {
+                    $newTag = str_replace("<" . $tag . ">", "", $oldTag);
+                    $newTag = str_replace("</" . $tag . ">", "", $newTag);
+                    $newTag = $replaceChar . trim($newTag) . $replaceChar . "";
+                    $messageTxt = str_replace($oldTag, " " . $newTag . " ", $messageTxt);
+                    $hasTags = true;
+                }
+            }
+        }
+        $messageTxt = $hasTags ? self::replacePunctuationMarks($messageTxt) : $messageTxt;
+        return $messageTxt;
+    }
+
+    /**
+     * Replace extra spaces in some punctuation marks
+     * @param string $messageTxt
+     * @return string $messageTxt
+     */
+    protected static function replacePunctuationMarks(string $messageTxt)
+    {
+        $messageTxt = str_replace(" ;", ";", $messageTxt);
+        $messageTxt = str_replace(" ,", ",", $messageTxt);
+        $messageTxt = str_replace(" .", ".", $messageTxt);
+        $messageTxt = str_replace(" :", ":", $messageTxt);
+        $messageTxt = str_replace(" )", ")", $messageTxt);
+        return $messageTxt;
+    }
+
+    /**
+     * Remove the common html tags from the message and set the final message
+     */
+    public static function formatFinalMessage($message)
+    {
+        $message = html_entity_decode($message, ENT_COMPAT, "UTF-8");
+        $message = str_replace('&nbsp;', ' ', $message);
+        $message = str_replace(["\t"], '', $message);
+
+        $breaks = array("<br />", "<br>", "<br/>", "<p>");
+        $message = str_ireplace($breaks, "\n", $message);
+
+        $message = strip_tags($message);
+
+        $rows = explode("\n", $message);
+        $messageProcessed = "";
+        $previousJump = 0;
+        foreach ($rows as $row) {
+            if ($row == "" && $previousJump == 0) {
+                $previousJump++;
+            } else if ($row == "" && $previousJump == 1) {
+                $previousJump++;
+                $messageProcessed .= "\r\n";
+            }
+            if ($row !== "") {
+                $messageProcessed .= $row . "\r\n";
+                $previousJump = 0;
+            }
+        }
+        $messageProcessed = str_replace("  ", " ", $messageProcessed);
+        return $messageProcessed;
+    }
+
+    /**
+     * Clean buttons title from non valid emojis
+     * @param string $title
+     * @return string $title
+     */
+    public static function cleanButtonTitle(string $title)
+    {
+        $titleTmp = json_encode($title);
+        if (strpos($titleTmp, "\u200d") > 0) { //Check if exists the invalid string: "\u200d"
+            $regex_emoticons = '/[\x{200d}]/u';
+            $clear_string = preg_replace($regex_emoticons, '', $title);
+
+            // Match Emoticons
+            $regex_emoticons = '/[\x{1F600}-\x{1F64F}]/u';
+            $clear_string = preg_replace($regex_emoticons, '', $clear_string);
+
+            // Match Miscellaneous Symbols and Pictographs
+            $regex_symbols = '/[\x{1F300}-\x{1F5FF}]/u';
+            $clear_string = preg_replace($regex_symbols, '', $clear_string);
+
+            // Match Transport And Map Symbols
+            $regex_transport = '/[\x{1F680}-\x{1F6FF}]/u';
+            $clear_string = preg_replace($regex_transport, '', $clear_string);
+
+            // Match Miscellaneous Symbols
+            $regex_misc = '/[\x{2600}-\x{26FF}]/u';
+            $clear_string = preg_replace($regex_misc, '', $clear_string);
+
+            // Match Dingbats
+            $regex_dingbats = '/[\x{2700}-\x{27BF}]/u';
+            $clear_string = preg_replace($regex_dingbats, '', $clear_string);
+
+            $title = $clear_string;
+        }
+        return trim($title);
+    }
+
     public static function removeAccentsToLower($string)
     {
         return strtolower(self::removeAccents($string));
     }
-    
+
     public static function removeAccents($string)
     {
         if (!preg_match('/[\x80-\xff]/', $string))

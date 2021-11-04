@@ -42,7 +42,7 @@ return [
         ]
     ],
     'digester' => [
-        // Consider that Whatsapp buttons only accepts 20 characters, if this is active, some of your content titles may not be displayed in full
+        // Consider that Whatsapp buttons only accepts 20 characters (24 for lists), if this is active, some of your content titles may not be displayed completely
         'active_buttons' => false, // if "false", instead of buttons there will be a numbered option
     ],
 ];
