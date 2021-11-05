@@ -76,8 +76,8 @@ class D360Digester extends DigesterInterface
                 if (isset($reply->id)) {
                     if (is_numeric($reply->id)) {
                         $output[0] = ['option' => $reply->id];
-                    } else if (strpos($reply->id, '__dc') === 0 && strpos($reply->id, 'DC__') === 5) {
-                        $output[0] = ['directCall' => substr($reply->id, 9)];
+                    } else if (strpos($reply->id, '_dc') === 0 && strpos($reply->id, 'DC_') === 4) {
+                        $output[0] = ['directCall' => substr($reply->id, 7)];
                     } else {
                         $output[0] = ['message' => $reply->id];
                     }
@@ -362,7 +362,7 @@ class D360Digester extends DigesterInterface
                     isset($option->attributes->DIRECT_CALL) && trim($option->attributes->DIRECT_CALL) !== ''
                     && (strlen($option->attributes->DIRECT_CALL) + 9) <= $this->buttonsMaxIdLength
                 ) {
-                    $idButton = '__dc' . $i . 'DC__' . $option->attributes->DIRECT_CALL;
+                    $idButton = '_dc' . $i . 'DC_' . $option->attributes->DIRECT_CALL;
                 }
 
                 $rowButton = [
